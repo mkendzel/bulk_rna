@@ -2,6 +2,8 @@
 library(stringr)
 library(dplyr)
 library(DESeq2)
+library(ggvenn)
+library(grid)
 
 # ----- Import data ----
 expr <- read.delim(
@@ -99,7 +101,14 @@ list(
 )
 
 # remove low count samples
-
+counts <- counts[, colnames(counts) != "MAD_12_1"]
+counts <- counts[, colnames(counts) != "MAD_12_2"]
+counts <- counts[, colnames(counts) != "MAD_12_3"]
+counts <- counts[, colnames(counts) != "MAD_48_1"]
+counts <- counts[, colnames(counts) != "MAD_48_2"]
+counts <- counts[, colnames(counts) != "MAD_48_3"]
+counts <- counts[, colnames(counts) != "MAD_24_1"]
+counts <- counts[, colnames(counts) != "MAD_24_2"]
 counts <- counts[, colnames(counts) != "MAD_24_3"]
 
 # ---- set up deseq2 object ----
@@ -159,7 +168,7 @@ res_shrunk_list <- setNames(lapply(coef_names, function(coef_name) {
 
 plotMA(res_shrunk_list[["condition_MAD_12_vs_Mock_0"]])
 
-saveRDS(res_shrunk_list, "data/R2SDHF/Plasmo_resShrink_noMAD24_3.rds")
+saveRDS(res_shrunk_list, "data/R2SDHF/Plasmo_resShrink_noMAD.rds")
 
 # ---- PCA ----
 vsd <- vst(dds, blind = FALSE)
@@ -194,7 +203,6 @@ col_map <- c(
 pca_data$treatment_time <- factor(
   pca_data$treatment_time,
   levels = c("Mock_0","TX_12","TX_24","TX_48",
-             "MAD_12","MAD_24","MAD_48",
              "ROV_12","ROV_24","ROV_48")
 )
 
@@ -225,7 +233,7 @@ p <- ggplot(pca_data, aes(PC1, PC2, color = treatment_time)) +
 p
 
 ggsave(
-  filename = "figures/plasmo/PCA_treatment_time.png",
+  filename = "figures/plasmo/PCA(nomad)_treatment_time.png",
   plot = p,
   width = 8,
   height = 6
@@ -235,7 +243,7 @@ ggsave(
 padj_cutoff <- 0.05
 lfc_cutoff  <- 1.5
 
-outdir <- "figures/plasmo/volcano"
+outdir <- "figures/plasmo/volcano/nomad"
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
 for (coef_name in names(res_shrunk_list)) {
@@ -285,4 +293,270 @@ for (coef_name in names(res_shrunk_list)) {
   outfile <- file.path(outdir, paste0("volcano_", comp_label, ".png"))
   
   ggplot2::ggsave(outfile, p, width = 7, height = 6, dpi = 300)
+}
+
+# ---- Heatmaps highly variable ----
+
+vsd <- vst(dds, blind = FALSE)
+mat <- assay(vsd)
+
+# Ensembl -> SYMBOL map via org.Hs.eg.db
+ens_ids <- rownames(mat)
+
+map_df <- AnnotationDbi::select(
+  org.Hs.eg.db,
+  keys     = ens_ids,
+  keytype  = "ENSEMBL",
+  columns  = c("SYMBOL")
+) |>
+  tibble::as_tibble() |>
+  dplyr::filter(!is.na(SYMBOL) & SYMBOL != "") |>
+  dplyr::distinct(ENSEMBL, .keep_all = TRUE) |>
+  dplyr::rename(ensembl_id = ENSEMBL, gene_name = SYMBOL)
+
+idx <- match(ens_ids, map_df$ensembl_id)
+mapped_names <- map_df$gene_name[idx]
+
+# Top 50 most variable genes
+gene_vars <- apply(mat, 1, var, na.rm = TRUE)
+top_ens <- names(sort(gene_vars, decreasing = TRUE))[1:50]
+
+mat_subset <- mat[top_ens, , drop = FALSE]
+
+# Replace Ensembl rownames with gene_name (fallback to Ensembl)
+new_names <- mapped_names[match(top_ens, ens_ids)]
+new_names[is.na(new_names) | new_names == ""] <- top_ens[is.na(new_names) | new_names == ""]
+rownames(mat_subset) <- new_names
+
+# Z-score per gene
+mat_scaled <- t(scale(t(mat_subset)))
+
+# Column annotations from colData(dds)
+
+cd <- as.data.frame(colData(dds))
+
+if (!"sample" %in% colnames(cd)) {
+  cd$sample <- rownames(cd)
+}
+
+annotation_col <- cd |>
+  dplyr::mutate(
+    condition = as.character(.data$condition),
+    treatment = dplyr::if_else(stringr::str_detect(.data$condition, "^Mock"), "Mock",
+                               stringr::str_extract(.data$condition, "^[A-Za-z]+")),
+    time = dplyr::if_else(.data$treatment == "Mock", "0",
+                          stringr::str_extract(.data$condition, "(?<=_)[0-9]+"))
+  ) |>
+  dplyr::select(sample, treatment, time)
+
+rownames(annotation_col) <- annotation_col$sample
+annotation_col$sample <- NULL
+
+
+# Order columns: Mock first, then TX, MAD, ROV by time (only levels present)
+treat_levels <- intersect(c("Mock","TX","ROV"), unique(annotation_col$treatment))
+
+desired_order <- annotation_col |>
+  dplyr::mutate(
+    treatment = factor(.data$treatment, levels = treat_levels),
+    time = as.numeric(.data$time)
+  ) |>
+  dplyr::arrange(.data$treatment, .data$time) |>
+  rownames()
+
+mat_scaled <- mat_scaled[, desired_order, drop = FALSE]
+annotation_col <- annotation_col[desired_order, , drop = FALSE]
+
+pheatmap::pheatmap(
+  mat_scaled,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  annotation_col = annotation_col,
+  show_rownames = TRUE,
+  show_colnames = FALSE
+)
+
+
+
+# ---- log2FC heatmap vs Mock_0 (non-sig black), biomaRt gene labels, no MAD ----
+mart <- biomaRt::useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl")
+
+lfc_cutoff  <- 1.5
+padj_cutoff <- 0.05
+top_n_genes <- 250
+
+# Identify contrasts comparing each condition to Mock_0
+keep_names <- names(res_shrunk_list)[stringr::str_detect(names(res_shrunk_list), "_vs_Mock_0$")]
+res_use <- res_shrunk_list[keep_names]
+
+# Convert DESeqResults objects to data frames and retain contrast names
+res_use_df <- purrr::imap(res_use, function(res, contrast_name) {
+  df <- as.data.frame(res)
+  df$ensembl_id <- rownames(df)
+  df$contrast   <- contrast_name
+  df
+})
+
+# Combine all contrasts and retain genes meeting significance thresholds
+sig_tbl <- dplyr::bind_rows(res_use_df) |>
+  dplyr::filter(!is.na(padj), !is.na(log2FoldChange)) |>
+  dplyr::filter(padj < padj_cutoff, abs(log2FoldChange) >= lfc_cutoff) |>
+  dplyr::select(ensembl_id, log2FoldChange, padj, contrast)
+
+# Rank genes by maximum absolute log2 fold change across contrasts
+top_genes <- sig_tbl |>
+  dplyr::group_by(ensembl_id) |>
+  dplyr::summarise(max_abs_lfc = max(abs(log2FoldChange)), .groups = "drop") |>
+  dplyr::arrange(dplyr::desc(max_abs_lfc)) |>
+  dplyr::slice_head(n = top_n_genes) |>
+  dplyr::pull(ensembl_id)
+
+# Construct matrix of log2 fold changes for selected genes
+# Values not meeting thresholds are set to NA for visualization
+lfc_mat <- sapply(res_use_df, function(df) {
+  idx <- match(top_genes, df$ensembl_id)
+  lfc <- df$log2FoldChange[idx]
+  p   <- df$padj[idx]
+  
+  is_sig <- !is.na(p) & !is.na(lfc) & (p < padj_cutoff) & (abs(lfc) >= lfc_cutoff)
+  lfc[!is_sig] <- NA_real_
+  
+  lfc
+})
+colnames(lfc_mat) <- keep_names
+
+# Parse contrast names and generate simplified column labels (e.g., "TX 12")
+contrast_tbl <- tibble::tibble(contrast = colnames(lfc_mat)) |>
+  dplyr::mutate(
+    condition = stringr::str_match(contrast, "condition_([^_]+_[0-9]+)_vs_Mock_0")[, 2],
+    treatment = stringr::str_extract(condition, "^[A-Za-z]+"),
+    time      = as.numeric(stringr::str_extract(condition, "(?<=_)[0-9]+")),
+    label     = paste(treatment, time)
+  )
+
+# Order columns by time, then treatment (TX and ROV adjacent within each timepoint)
+treat_levels <- c("TX", "ROV")
+contrast_order <- contrast_tbl |>
+  dplyr::mutate(
+    time = factor(time, levels = sort(unique(time))),
+    treatment = factor(treatment, levels = c(treat_levels, setdiff(unique(treatment), treat_levels)))
+  ) |>
+  dplyr::arrange(time, treatment) |>
+  dplyr::pull(contrast)
+
+lfc_mat <- lfc_mat[, contrast_order, drop = FALSE]
+
+# Apply simplified column labels
+col_label_map <- contrast_tbl$label
+names(col_label_map) <- contrast_tbl$contrast
+colnames(lfc_mat) <- col_label_map[colnames(lfc_mat)]
+
+# Map Ensembl identifiers to HGNC symbols; fallback to original ID if unavailable
+top_genes_clean <- sub("\\..*$", "", top_genes)
+
+bm <- biomaRt::getBM(
+  attributes = c("ensembl_gene_id", "hgnc_symbol", "external_gene_name"),
+  filters    = "ensembl_gene_id",
+  values     = unique(top_genes_clean),
+  mart       = mart
+) |>
+  tibble::as_tibble() |>
+  dplyr::mutate(gene_name = dplyr::coalesce(hgnc_symbol, external_gene_name)) |>
+  dplyr::filter(!is.na(gene_name) & gene_name != "") |>
+  dplyr::distinct(ensembl_gene_id, .keep_all = TRUE)
+
+gene_labels <- bm$gene_name[match(top_genes_clean, bm$ensembl_gene_id)]
+gene_labels[is.na(gene_labels) | gene_labels == ""] <- top_genes[is.na(gene_labels) | gene_labels == ""]
+rownames(lfc_mat) <- gene_labels
+
+# Replace NA with zero only for clustering distance calculation
+lfc_for_cluster <- lfc_mat
+lfc_for_cluster[is.na(lfc_for_cluster)] <- 0
+row_hc <- stats::hclust(stats::dist(lfc_for_cluster))
+
+# Generate heatmap with non-significant values displayed in black
+pheatmap::pheatmap(
+  lfc_mat,
+  cluster_rows = row_hc,
+  cluster_cols = FALSE,
+  na_col = "black",
+  show_colnames = TRUE,
+  show_rownames = FALSE,
+  angle_col = 0,
+  main = "Top 250 DE Genes Relative to Mock (log2 Fold Change)"
+)
+
+# ---- Venn Diagram of DE Genes ----
+
+lfc_cutoff  <- 1.5
+padj_cutoff <- 0.05
+
+# Identify contrasts vs Mock_0
+keep_names <- names(res_shrunk_list)
+keep_names <- keep_names[grepl("_vs_Mock_0$", keep_names)]
+
+# Parse treatment and time from contrast names
+contrast_tbl <- data.frame(
+  contrast  = keep_names,
+  condition = sub("condition_([^_]+_[0-9]+)_vs_Mock_0", "\\1", keep_names),
+  stringsAsFactors = FALSE
+)
+
+contrast_tbl$treatment <- sub("_.*", "", contrast_tbl$condition)
+contrast_tbl$time      <- as.numeric(sub(".*_", "", contrast_tbl$condition))
+contrast_tbl <- contrast_tbl[contrast_tbl$treatment %in% c("TX", "ROV"), ]
+
+# Build significant gene sets per contrast
+sig_sets <- list()
+
+for (nm in keep_names) {
+  res <- res_shrunk_list[[nm]]
+  df  <- as.data.frame(res)
+  df$ensembl_id <- rownames(df)
+  
+  sig_genes <- df$ensembl_id[
+    !is.na(df$padj) &
+      !is.na(df$log2FoldChange) &
+      df$padj < padj_cutoff &
+      abs(df$log2FoldChange) >= lfc_cutoff
+  ]
+  
+  sig_sets[[nm]] <- unique(sub("\\..*$", "", sig_genes))
+}
+
+# Create Venn plots for 12, 24, 48 hours
+times <- sort(unique(contrast_tbl$time))
+times <- times[times %in% c(12, 24, 48)]
+
+venn_plots <- list()
+
+for (tp in times) {
+  
+  tx_con  <- contrast_tbl$contrast[contrast_tbl$time == tp & contrast_tbl$treatment == "TX"]
+  rov_con <- contrast_tbl$contrast[contrast_tbl$time == tp & contrast_tbl$treatment == "ROV"]
+  
+  sets_tp <- list(
+    TX  = sig_sets[[tx_con]],
+    ROV = sig_sets[[rov_con]]
+  )
+  
+  venn_plots[[as.character(tp)]] <-
+    ggvenn(
+      sets_tp,
+      show_elements = FALSE
+    ) +
+    ggtitle(paste0(tp, "h")) +
+    theme(plot.title = element_text(hjust = 0.5),
+          size = 40)
+}
+
+# Draw all three in a single row
+grid.newpage()
+pushViewport(viewport(layout = grid.layout(1, length(venn_plots))))
+
+for (i in seq_along(venn_plots)) {
+  print(
+    venn_plots[[i]],
+    vp = viewport(layout.pos.row = 1, layout.pos.col = i)
+  )
 }

@@ -129,7 +129,7 @@ res_shrunk_list <- lapply(coef_names, function(coef_name) {
 
 names(res_shrunk_list) <- coef_names
 
-
+saveRDS(res_shrunk_list, "data/R2SDHF/res_shrunk_list.rds")
 
 # ---- PCA with all samples-----
 vsd <- vst(dds, blind = FALSE)
