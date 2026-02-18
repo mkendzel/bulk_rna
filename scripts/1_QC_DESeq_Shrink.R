@@ -155,6 +155,10 @@ dds <- DESeq(dds)
 
 resultsNames(dds)
 
+#Save DESeq object
+# saveRDS(dds, "data/R2SDHF/r_objects/plasmo_dds_noMAD.rds")
+# dds <- readRDS("data/R2SDHF/r_objects/plasmo_dds_noMAD.rds")
+
 # ---- Shrink data ----
 #Look at MA plot
 res <- results(dds)
