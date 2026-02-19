@@ -174,13 +174,58 @@ DESeq2::plotMA(res, ylim = c(-5, 5))
 
 #Save/load DESeq object
 # saveRDS(dds, "data/R2SDHF/r_objects/plasmo_dds_noMAD.rds")
-# dds <- readRDS("data/R2SDHF/r_objects/plasmo_dds_noMAD.rds")
+dds <- readRDS("data/R2SDHF/r_objects/plasmo_dds_noMAD.rds")
+
+# Normalied reads
+dds <- estimateSizeFactors(dds)
+normalized_counts <- counts(dds, normalized=TRUE)
+
 
 #Save/load Shrunk Data
 saveRDS(res_shrunk_list, "data/R2SDHF/Plasmo_resShrink_noMAD_qcmin10.rds")
-res_shrunk_list <- readRDS("data/R2SDHF/Plasmo_resShrink_noMAD.rds")
+res_shrunk_list <- readRDS("data/R2SDHF/Plasmo_resShrink_noMAD_qcmin10.rds")
 
 
+# ---- ADD mapping of gene names ----
+# ---- Collect all Ensembl IDs across contrasts ----
+all_ensembl <- res_shrunk_list |>
+  purrr::map(~ rownames(.x)) |>
+  unlist(use.names = FALSE) |>
+  unique() |>
+  as.character()
+
+# Remove version suffix if present (e.g. ENSG00000123456.7)
+all_ensembl_clean <- sub("\\..*$", "", all_ensembl)
+
+# ---- Build mapping table ----
+gene_map <- AnnotationDbi::select(
+  org.Hs.eg.db,
+  keys    = all_ensembl_clean,
+  keytype = "ENSEMBL",
+  columns = c("ENTREZID", "SYMBOL")
+) |>
+  as_tibble() |>
+  distinct(ENSEMBL, .keep_all = TRUE) |>
+  rename(
+    ensembl_id = ENSEMBL,
+    entrez_id  = ENTREZID,
+    SYMBOL     = SYMBOL
+  )
+
+# ---- Append identifiers to every contrast ----
+res_shrunk_list <- purrr::map(res_shrunk_list, function(df) {
+  
+  df |>
+    as.data.frame() |>
+    rownames_to_column("ensembl_id") |>
+    mutate(ensembl_id = sub("\\..*$", "", ensembl_id)) |>
+    left_join(gene_map, by = "ensembl_id") |>
+    as_tibble()
+  
+})
+
+saveRDS(res_shrunk_list, "data/R2SDHF/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
+res_shrunk_list <- readRDS("data/R2SDHF/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
 
 
 
