@@ -1,10 +1,17 @@
 # ---- Libraries ----
-library(stringr)
 library(dplyr)
-library(DESeq2)
+library(readxl)
+library(limma)
+library(edgeR)
+
+library(stringr)
+
+
+
 library(ggvenn)
 library(grid)
-library(readxl)
+
+
 # ----- Import data ----
 ## Shilu's data
 #Import expression matrix in tsv format
@@ -31,7 +38,7 @@ expr <- expr[, -1]
 
 # colname formating
 colnames(expr) <- sub("^\\./", "", colnames(expr))
-colnames(expr) <- sub("_Aligned.*$", "", colnames(expr))
+colnames(expr) <- sub("_S.*$", "", colnames(expr))
 
 
 #### Metadata
@@ -45,19 +52,25 @@ metadata <- as.data.frame(metadata)
 # ---- Set up and subset datasets ----
 
 # Filter metadata for hSPS organoids with Ctrx coating
-meta_filtered <- metadata[metadata$Organoid == "hSPS" & metadata$Coating == "Ctrx"]
+meta_filtered <- metadata %>%
+  filter(Organoid == "hSpS", Coating == "Ctrx", Line %in% c("ALS", "control")) %>%
+  select(Admera_Health_ID, Patient, AgeOrg, Line, Replicate, Sex)
 
-# Keep only relevant columns
-meta_filtered <- meta_filtered[, c("Admera_Helath_ID", "Patient", "AgeOrg")]
+meta_filtered %>%
+  group_by(AgeOrg, Sex, Line) %>%
+  summarise(
+    n = n(),
+    Patients = paste(unique(Patient), collapse = ", "),
+    Lines = paste(unique(Line), collapse = ", ")
+  )
 
-# Subset expression matrix to only matching samples
-expr_filtered <- expr[, colnames(expr) %in% meta_filtered$Admera_Helath_ID]
+meta_filtered$Line <- relevel(meta_filtered$Line, ref = "control")
+meta_filtered$AgeOrg <- as.factor(meta_filtered$AgeOrg)
+meta_filtered$Patient <- as.factor(meta_filtered$Patient)
+meta_filtered$Sex <- as.factor(meta_filtered$Sex)
 
-# Make sure they're in the same order (critical for DESeq2)
-meta_filtered <- meta_filtered[match(colnames(expr_filtered), meta_filtered$Admera_Helath_ID), ]
-
-# Confirm order matches
-all(colnames(expr_filtered) == meta_filtered$Admera_Helath_ID)
+#Count matrix
+counts <- expr %>% select(all_of(meta_filtered$Admera_Health_ID))
 
 # ---- QC For samples ----
 qc_list <- lapply(colnames(counts), function(s) {
@@ -86,76 +99,53 @@ list(
   gene_summaries = gene_summaries
 )
 
-# remove low count samples
-counts <- counts[, colnames(counts) != "MAD_12_1"]
-counts <- counts[, colnames(counts) != "MAD_12_2"]
-counts <- counts[, colnames(counts) != "MAD_12_3"]
-counts <- counts[, colnames(counts) != "MAD_48_1"]
-counts <- counts[, colnames(counts) != "MAD_48_2"]
-counts <- counts[, colnames(counts) != "MAD_48_3"]
-counts <- counts[, colnames(counts) != "MAD_24_1"]
-counts <- counts[, colnames(counts) != "MAD_24_2"]
-counts <- counts[, colnames(counts) != "MAD_24_3"]
-
 #Save/load checkpoint
-# saveRDS(counts, "data/R2SDHF/r_objects/plasmo_counts_noMAD.rds")
-counts <- readRDS("data/R2SDHF/r_objects/plasmo_counts_noMAD.rds")
+# saveRDS(counts, "data/Anderson-Suthar_collab/Als_org_Jimena/counts(hSpS_Ctrx).rds")
+# counts <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/counts(hSpS_Ctrx).rds")
 
-# ---- set up deseq2 object ----
-sample_names <- colnames(counts)
+saveRDS(meta_filtered, "data/Anderson-Suthar_collab/Als_org_Jimena/meta_filtered(hSpS_Ctrx).rds")
+meta_filtered <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/meta_filtered(hSpS_Ctrx).rds")
 
-colData <- data.frame(sample = sample_names) |>
-  dplyr::mutate(
-    group = dplyr::case_when(
-      stringr::str_detect(sample, "Mock") ~ "Mock",
-      TRUE ~ stringr::str_extract(sample, "TX|MAD|ROV")
-    ),
-    time = dplyr::case_when(
-      stringr::str_detect(sample, "Mock") ~ "0",
-      TRUE ~ stringr::str_extract(sample, "12|24|48")
-    ),
-    condition = ifelse(group == "Mock", "Mock_0", paste0(group, "_", time))
-  )
+# ---- limma and edgeR set up ----
 
-rownames(colData) <- colData$sample
+dge <- DGEList(counts = counts)
 
-# Ensure the reference level is Mock_0 so all contrasts are computed vs Mock_0
-colData$condition <- relevel(factor(colData$condition), ref = "Mock_0")
+# Filter low expressed genes - keep genes expressed in at least a reasonable number of samples
+keep <- filterByExpr(dge, group = meta_filtered$Line)
+dge <- dge[keep, , keep.lib.sizes = FALSE]
 
-dds <- DESeq2::DESeqDataSetFromMatrix(
-  countData = round(as.matrix(counts)),
-  colData   = colData,
-  design    = ~ condition
-)
+# Normalize
+dge <- calcNormFactors(dge)
 
-# Remove low-information genes to reduce noise and speed up fitting
-keep <- rowSums(DESeq2::counts(dds) >= 10) >= 5
-dds <- dds[keep, ]
+# Set up design matrix
+design <- model.matrix(~ Sex + AgeOrg + Line, data = meta_filtered)
 
-# Transform counts for sample-level exploration (PCA)
-vsd <- DESeq2::vst(dds)
-DESeq2::plotPCA(vsd, intgroup = "condition")
+# First voom transformation
+v <- voom(dge, design)
 
-# Fit the DESeq2 model; disable outlier replacement for consistent behavior across conditions
-dds <- DESeq2::DESeq(dds, minReplicatesForReplace = Inf)
+# Account for repeated measures (Patient)
+corfit <- duplicateCorrelation(v, design, block = meta_filtered$Patient)
 
-# Inspect the coefficient names to confirm which contrasts exist
-coef_names <- DESeq2::resultsNames(dds)
+# Second voom with the correlation estimate
+v <- voom(dge, design, block = meta_filtered$Patient, correlation = corfit$consensus)
 
-# Keep only coefficients that represent contrasts against the Mock_0 reference
-coef_names_vs_mock <- coef_names[grep("vs_Mock", coef_names)]
+# Re-estimate correlation with updated voom weights
+corfit <- duplicateCorrelation(v, design, block = meta_filtered$Patient)
 
-# Shrink log2 fold-changes with apeglm for each vs-Mock coefficient
-res_shrunk_list <- setNames(
-  lapply(coef_names_vs_mock, function(coef_name) {
-    DESeq2::lfcShrink(dds, coef = coef_name, type = "apeglm")
-  }),
-  coef_names_vs_mock
-)
+# Fit the model
+fit <- lmFit(v, design, block = meta_filtered$Patient, correlation = corfit$consensus)
+fit <- eBayes(fit)
 
-# Quick check of unshrunk MA plot for the default results
-res <- DESeq2::results(dds)
-DESeq2::plotMA(res, ylim = c(-5, 5))
+# Get results for ALS vs Control
+results <- topTable(fit, coef = "LineALS", number = Inf)
+
+
+
+
+
+
+
+
 
 
 #Save/load DESeq object
