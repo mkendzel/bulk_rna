@@ -3,6 +3,8 @@ library(fgsea)
 # ---- Data load ----
 gmt_path <- "data/geneset/h.all.v2025.1.Hs.symbols.gmt"
 hallmark_sets <- gmtPathways(gmt_path)
+#
+
 # ---- PCA ----
 vsd <- vst(dds, blind = FALSE)
 
@@ -320,181 +322,170 @@ pheatmap::pheatmap(
 )
 
 # ---- Heatmap specific pathways ----
-mart <- biomaRt::useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl")
-
-hallmark_name <- "HALLMARK_TNFA_SIGNALING_VIA_NFKB"
-
+res_shrunk_list <- readRDS("data/R2SDHF/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
+# Thresholds used to define “responsive” genes within the selected hallmark set
 lfc_cutoff  <- 1.5
 padj_cutoff <- 0.05
-mask_nonsig <- TRUE
 
-# contrasts: *_vs_Mock_0
-keep_names <- names(res_shrunk_list)[stringr::str_detect(names(res_shrunk_list), "_vs_Mock_0$")]
-res_use <- res_shrunk_list[keep_names]
-
-res_use_df <- purrr::imap(res_use, function(res, contrast_name) {
-  df <- as.data.frame(res)
-  df$ensembl_id <- rownames(df)
-  df$contrast   <- contrast_name
-  df
-})
-
-contrast_tbl <- tibble::tibble(contrast = keep_names) |>
-  dplyr::mutate(
-    condition = stringr::str_match(contrast, "condition_([^_]+_[0-9]+)_vs_Mock_0")[, 2],
-    treatment = stringr::str_extract(condition, "^[A-Za-z]+"),
-    time      = as.numeric(stringr::str_extract(condition, "(?<=_)[0-9]+")),
-    label     = paste(treatment, time)
-  )
-
-treat_levels <- c("TX", "ROV")
-contrast_order <- contrast_tbl |>
-  dplyr::mutate(
-    time = factor(time, levels = sort(unique(time))),
-    treatment = factor(treatment, levels = c(treat_levels, setdiff(unique(treatment), treat_levels)))
-  ) |>
-  dplyr::arrange(time, treatment) |>
-  dplyr::pull(contrast)
-
-col_label_map <- contrast_tbl$label
-names(col_label_map) <- contrast_tbl$contrast
-
-stopifnot(hallmark_name %in% names(hallmark_sets))
+# Hallmark geneset to visualize
+hallmark_name <- "HALLMARK_INTERFERON_ALPHA_RESPONSE"
 symbols <- unique(hallmark_sets[[hallmark_name]])
 
-sym_map <- biomaRt::getBM(
-  attributes = c("hgnc_symbol", "external_gene_name", "ensembl_gene_id"),
-  filters    = c("hgnc_symbol"),
-  values     = symbols,
-  mart       = mart
-) |>
-  tibble::as_tibble() |>
-  dplyr::mutate(symbol = dplyr::coalesce(hgnc_symbol, external_gene_name)) |>
-  dplyr::filter(!is.na(ensembl_gene_id) & ensembl_gene_id != "") |>
-  dplyr::distinct(symbol, .keep_all = TRUE)
+# Keep only contrasts that compare to Mock_0
+keep_names <- names(res_shrunk_list)[grepl("_vs_Mock_0$", names(res_shrunk_list))]
+res_use <- res_shrunk_list[keep_names]
 
-genes_ens <- unique(sym_map$ensembl_gene_id)
-row_labels <- sym_map$symbol[match(genes_ens, sym_map$ensembl_gene_id)]
-row_labels[is.na(row_labels) | row_labels == ""] <- genes_ens[is.na(row_labels) | row_labels == ""]
+# Normalize Ensembl IDs by stripping version suffix (e.g., ENSG... .12 -> ENSG...)
+clean_ens <- function(x) sub("\\..*$", "", as.character(x))
 
-lfc_mat <- sapply(res_use_df, function(df) {
-  idx <- match(genes_ens, sub("\\..*$", "", df$ensembl_id))
-  lfc <- df$log2FoldChange[idx]
-  p   <- df$padj[idx]
-  
-  if (mask_nonsig) {
-    is_sig <- !is.na(p) & !is.na(lfc) & (p < padj_cutoff) & (abs(lfc) >= lfc_cutoff)
-    lfc[!is_sig] <- NA_real_
-  }
-  
-  lfc
+# Detect which columns contain symbols and Ensembl IDs in the DE result tables
+df0 <- as.data.frame(res_use[[1]])
+sym_col <- intersect(c("SYMBOL", "symbol", "hgnc_symbol"), names(df0))[1]
+ens_col <- intersect(c("ensembl_id", "ensembl_gene_id"), names(df0))[1]
+
+# Convert each DE result to a data.frame and keep the contrast name as a column
+res_use_df <- lapply(names(res_use), function(nm) {
+  df <- as.data.frame(res_use[[nm]])
+  df$contrast <- nm
+  df
 })
+names(res_use_df) <- names(res_use)
 
-colnames(lfc_mat) <- keep_names
-lfc_mat <- lfc_mat[, contrast_order, drop = FALSE]
-colnames(lfc_mat) <- col_label_map[colnames(lfc_mat)]
-rownames(lfc_mat) <- row_labels
+# Collect Ensembl IDs that are in the hallmark set and significant in any contrast
+sig_ens <- unique(unlist(lapply(res_use_df, function(df) {
+  df$symbol <- df[[sym_col]]
+  df$ensembl_id_clean <- clean_ens(df[[ens_col]])
+  df <- df[!is.na(df$symbol) & df$symbol %in% symbols, ]
+  df <- df[!is.na(df$padj) & !is.na(df$log2FoldChange), ]
+  df <- df[df$padj < padj_cutoff & abs(df$log2FoldChange) >= lfc_cutoff, ]
+  unique(df$ensembl_id_clean)
+}), use.names = FALSE))
 
-lfc_for_cluster <- lfc_mat
-lfc_for_cluster[is.na(lfc_for_cluster)] <- 0
-row_hc <- stats::hclust(stats::dist(lfc_for_cluster))
-
-# symmetric color scale centered at 0
-max_abs <- max(abs(lfc_mat), na.rm = TRUE)
-
-breaks <- seq(-max_abs, max_abs, length.out = 101)
-colors <- colorRampPalette(c("blue", "white", "red"))(100)
-
-
-# order genes by maximum absolute log2FC across contrasts
-row_order <- apply(lfc_mat, 1, function(x) max(abs(x), na.rm = TRUE))
-row_order[is.infinite(row_order)] <- NA_real_
-
-lfc_mat <- lfc_mat[order(row_order, decreasing = TRUE), , drop = FALSE]
-
-pheatmap::pheatmap(
-  lfc_mat,
-  cluster_rows = FALSE,
-  cluster_cols = FALSE,
-  color = colors,
-  breaks = breaks,
-  na_col = "black",
-  show_colnames = TRUE,
-  show_rownames = TRUE,
-  angle_col = 0,
-  main = paste0(hallmark_name, " (log2 Fold Change vs Mock_0)")
+# Build a stable Ensembl -> symbol mapping from the first contrast table
+sym_map <- res_use_df[[1]]
+sym_map <- data.frame(
+  ensembl_id_clean = clean_ens(sym_map[[ens_col]]),
+  symbol = as.character(sym_map[[sym_col]]),
+  stringsAsFactors = FALSE
 )
-# ---- Venn Diagram of DE Genes ----
+sym_map <- sym_map[!is.na(sym_map$ensembl_id_clean) & !duplicated(sym_map$ensembl_id_clean), ]
 
-lfc_cutoff  <- 1.5
-padj_cutoff <- 0.05
+# Pull DESeq2 normalized counts and add cleaned Ensembl IDs to match DE tables
+norm_counts <- as.data.frame(DESeq2::counts(dds, normalized = TRUE))
+norm_counts$ensembl_id_clean <- clean_ens(rownames(norm_counts))
 
-# Identify contrasts vs Mock_0
-keep_names <- names(res_shrunk_list)
-keep_names <- keep_names[grepl("_vs_Mock_0$", keep_names)]
+# Restrict to genes that are significant in at least one contrast
+norm_counts <- norm_counts[norm_counts$ensembl_id_clean %in% sig_ens, , drop = FALSE]
+count_cols <- setdiff(names(norm_counts), "ensembl_id_clean")
 
-# Parse treatment and time from contrast names
-contrast_tbl <- data.frame(
-  contrast  = keep_names,
-  condition = sub("condition_([^_]+_[0-9]+)_vs_Mock_0", "\\1", keep_names),
+# Convert wide counts (genes x samples) into long format (one row per gene-sample)
+counts_long <- data.frame(
+  ensembl_id_clean = rep(norm_counts$ensembl_id_clean, times = length(count_cols)),
+  sample = rep(count_cols, each = nrow(norm_counts)),
+  norm_count = as.vector(as.matrix(norm_counts[, count_cols, drop = FALSE])),
   stringsAsFactors = FALSE
 )
 
-contrast_tbl$treatment <- sub("_.*", "", contrast_tbl$condition)
-contrast_tbl$time      <- as.numeric(sub(".*_", "", contrast_tbl$condition))
-contrast_tbl <- contrast_tbl[contrast_tbl$treatment %in% c("TX", "ROV"), ]
+# Bring in sample metadata from the DESeq2 object
+coldata_df <- as.data.frame(SummarizedExperiment::colData(dds))
+coldata_df$sample <- rownames(coldata_df)
 
-# Build significant gene sets per contrast
-sig_sets <- list()
+# Combine counts, metadata, and gene symbols into a plotting table
+plot_df <- dplyr::left_join(counts_long, coldata_df, by = "sample")
+plot_df <- dplyr::left_join(plot_df, sym_map, by = "ensembl_id_clean")
+plot_df <- plot_df[!is.na(plot_df$symbol) & plot_df$symbol %in% symbols, ]
 
-for (nm in keep_names) {
-  res <- res_shrunk_list[[nm]]
-  df  <- as.data.frame(res)
-  df$ensembl_id <- rownames(df)
-  
-  sig_genes <- df$ensembl_id[
-    !is.na(df$padj) &
-      !is.na(df$log2FoldChange) &
-      df$padj < padj_cutoff &
-      abs(df$log2FoldChange) >= lfc_cutoff
-  ]
-  
-  sig_sets[[nm]] <- unique(sub("\\..*$", "", sig_genes))
+# Parse the condition label into treatment and time, keeping Mock as time 0
+plot_df <- plot_df |>
+  dplyr::mutate(
+    treatment = dplyr::if_else(grepl("^Mock", condition), "Mock", sub("_.*$", "", condition)),
+    time = dplyr::if_else(grepl("^Mock", condition), 0L, as.integer(sub("^.*_", "", condition))),
+    group = paste0(treatment, "_", time)
+  )
+
+# Set x-axis ordering by time, then by treatment
+group_order <- plot_df |>
+  dplyr::distinct(group, treatment, time) |>
+  dplyr::mutate(
+    time = factor(time, levels = sort(unique(time))),
+    treatment = factor(treatment, levels = c("Mock", "TX", "ROV"))
+  ) |>
+  dplyr::arrange(time, treatment) |>
+  dplyr::pull(group)
+
+plot_df <- plot_df |>
+  dplyr::mutate(group = factor(group, levels = group_order))
+
+# Summarize per gene and group for bar height and error bars
+summary_df <- plot_df |>
+  dplyr::group_by(symbol, group, treatment) |>
+  dplyr::summarise(
+    n = sum(!is.na(norm_count)),
+    mean_norm = mean(norm_count, na.rm = TRUE),
+    sd_norm = stats::sd(norm_count, na.rm = TRUE),
+    sem_norm = sd_norm / sqrt(n),
+    .groups = "drop"
+  )
+
+# Choose whether colors are driven by treatment only or by each group/time combination
+color_mode <- "treatment"
+file_ext   <- "png"
+
+plot_df <- plot_df |>
+  dplyr::mutate(color_key = if (color_mode == "group") as.character(group) else as.character(treatment))
+
+summary_df <- summary_df |>
+  dplyr::mutate(color_key = if (color_mode == "group") as.character(group) else as.character(treatment))
+
+# Define fill colors for bars and points
+fill_map <- if (color_mode == "treatment") {
+  c(Mock = "grey50", TX = "dodgerblue3", ROV = "purple3")
+} else {
+  setNames(
+    rep_len(c("grey50", "dodgerblue3", "purple3", "seagreen3", "orange3"), length(group_order)),
+    group_order
+  )
 }
 
-# Create Venn plots for 12, 24, 48 hours
-times <- sort(unique(contrast_tbl$time))
-times <- times[times %in% c(12, 24, 48)]
-
-venn_plots <- list()
-
-for (tp in times) {
+# Build a bar + jitter plot for a single gene symbol
+make_gene_plot <- function(gene_symbol) {
+  df_pts <- plot_df |> dplyr::filter(symbol == gene_symbol)
+  df_sum <- summary_df |> dplyr::filter(symbol == gene_symbol)
   
-  tx_con  <- contrast_tbl$contrast[contrast_tbl$time == tp & contrast_tbl$treatment == "TX"]
-  rov_con <- contrast_tbl$contrast[contrast_tbl$time == tp & contrast_tbl$treatment == "ROV"]
-  
-  sets_tp <- list(
-    TX  = sig_sets[[tx_con]],
-    ROV = sig_sets[[rov_con]]
-  )
-  
-  venn_plots[[as.character(tp)]] <-
-    ggvenn(
-      sets_tp,
-      show_elements = FALSE
+  ggplot2::ggplot(df_sum, ggplot2::aes(x = group, y = mean_norm, fill = color_key)) +
+    ggplot2::geom_col(width = 0.75) +
+    ggplot2::geom_errorbar(
+      ggplot2::aes(ymin = mean_norm - sem_norm, ymax = mean_norm + sem_norm),
+      width = 0.25
     ) +
-    ggtitle(paste0(tp, "h")) +
-    theme(plot.title = element_text(hjust = 0.5),
-          size = 40)
+    ggplot2::geom_point(
+      data = df_pts,
+      mapping = ggplot2::aes(x = group, y = norm_count, fill = color_key),
+      position = ggplot2::position_jitter(width = 0.15, height = 0),
+      shape = 21,
+      size = 2.5,
+      color = "black",
+      stroke = 0.6
+    ) +
+    ggplot2::scale_fill_manual(values = fill_map) +
+    ggplot2::labs(x = NULL, y = "Normalized counts", title = gene_symbol) +
+    ggplot2::theme_bw() +
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1))
 }
 
-# Draw all three in a single row
-grid.newpage()
-pushViewport(viewport(layout = grid.layout(1, length(venn_plots))))
+# Gene list to render plots for (one figure per gene)
+sig_symbols <- summary_df |>
+  dplyr::filter(!is.na(symbol) & symbol != "") |>
+  dplyr::distinct(symbol) |>
+  dplyr::pull(symbol)
 
-for (i in seq_along(venn_plots)) {
-  print(
-    venn_plots[[i]],
-    vp = viewport(layout.pos.row = 1, layout.pos.col = i)
-  )
+# Output folder per hallmark set
+outdir <- file.path("figures", "bargraphs", hallmark_name)
+dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
+
+# Save one plot per gene symbol
+for (g in sig_symbols) {
+  p <- make_gene_plot(g)
+  fn <- file.path(outdir, paste0(g, ".", file_ext))
+  ggplot2::ggsave(fn, p, width = 8, height = 4, dpi = 300)
 }
