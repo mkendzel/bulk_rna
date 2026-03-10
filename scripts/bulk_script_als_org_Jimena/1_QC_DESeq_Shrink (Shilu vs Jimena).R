@@ -6,9 +6,11 @@ library(edgeR)
 library(stringr)
 library(ggvenn)
 library(grid)
+library(org.Hs.eg.db)
+library(uwot)
 
 
-# ----- Import data ----
+# ----- Import and process R2SDHF data ----
 ## Shilu's data
 #Import expression matrix in tsv format
 expr_R2SDHF <- read.delim(
@@ -68,51 +70,49 @@ counts_R2SDHF <- counts_R2SDHF[, !grepl("^MAD_", colnames(counts_R2SDHF))]
 meta_R2SDHF <- data.frame(
   sample = colnames(counts_R2SDHF),
   treatment = gsub("_\\d+_\\d+$", "", colnames(counts_R2SDHF)),
-  time = as.numeric(gsub("^[A-Za-z]+_(\\d+)_\\d+$", "\\1", colnames(counts_R2SDHF))),
+  time = gsub("^[A-Za-z]+_(\\d+)_\\d+$", "\\1", colnames(counts_R2SDHF)),
   rep = gsub("^.*_(\\d+)$", "\\1", colnames(counts_R2SDHF))
 )
 rownames(meta_R2SDHF) <- meta_R2SDHF$sample
 
-# Process
+# Combined condition with Mock_0 as reference
+meta_R2SDHF$condition <- ifelse(meta_R2SDHF$treatment == "Mock", "Mock_0",
+                                paste0(meta_R2SDHF$treatment, "_", meta_R2SDHF$time))
+meta_R2SDHF$condition <- relevel(factor(meta_R2SDHF$condition), ref = "Mock_0")
+
+# ---- R2SDHF DE analysis ----
 dge_R2SDHF <- DGEList(counts = counts_R2SDHF)
-keep_R2SDHF <- filterByExpr(dge_R2SDHF)
+keep_R2SDHF <- filterByExpr(dge_R2SDHF, group = meta_R2SDHF$condition)
 dge_R2SDHF <- dge_R2SDHF[keep_R2SDHF, , keep.lib.sizes = FALSE]
 dge_R2SDHF <- calcNormFactors(dge_R2SDHF)
 
-# Simple design for voom
-design_R2SDHF <- model.matrix(~ treatment * factor(time), data = meta_R2SDHF)
+design_R2SDHF <- model.matrix(~ condition, data = meta_R2SDHF)
+colnames(design_R2SDHF) <- make.names(colnames(design_R2SDHF))
+
 v_R2SDHF <- voom(dge_R2SDHF, design_R2SDHF)
+fit_R2SDHF <- lmFit(v_R2SDHF, design_R2SDHF)
+fit_R2SDHF <- eBayes(fit_R2SDHF)
 
-# ---- Combined PCA ----
-# Find shared genes
-shared_genes <- intersect(rownames(v$E), rownames(v_R2SDHF$E))
+colnames(fit_R2SDHF$coefficients)
 
-# Combine expression
-combined_expr <- cbind(v$E[shared_genes, ], v_R2SDHF$E[shared_genes, ])
+# map gene names
+ensembl_ids <- rownames(v_R2SDHF$E)
+gene_map <- mapIds(org.Hs.eg.db, keys = ensembl_ids, 
+                   keytype = "ENSEMBL", column = "SYMBOL")
 
-# Batch correct
-batch <- factor(c(rep("organoid", ncol(v$E)), rep("R2SDHF", ncol(v_R2SDHF$E))))
-corrected <- removeBatchEffect(combined_expr, batch = batch)
+# Remove NAs and duplicates
+mapped <- gene_map[!is.na(gene_map)]
+mapped <- mapped[!duplicated(mapped)]
 
-# PCA
-pca_combined <- prcomp(t(corrected), scale. = TRUE)
+# Subset and rename
+v_R2SDHF_sym <- v_R2SDHF$E[names(mapped), ]
+rownames(v_R2SDHF_sym) <- mapped
 
-# Build plotting df
-pca_combined_df <- data.frame(
-  PC1 = pca_combined$x[, 1],
-  PC2 = pca_combined$x[, 2],
-  dataset = c(rep("organoid", ncol(v$E)), rep("R2SDHF", ncol(v_R2SDHF$E))),
-  label = c(as.character(meta_filtered$Stage), paste0(meta_R2SDHF$treatment, "_", meta_R2SDHF$time, "h"))
-)
+### Save/load checkpoint
+saveRDS(v_R2SDHF_sym, "data/Anderson-Suthar_collab/Als_org_Jimena/R2SDHF.rds")
+v_R2SDHF_sym <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/R2SDHF.rds")
 
-ggplot(pca_combined_df, aes(x = PC1, y = PC2, color = label, shape = dataset)) +
-  geom_point(size = 3) +
-  theme_minimal() +
-  labs(
-    x = paste0("PC1 (", round(summary(pca_combined)$importance[2,1]*100, 1), "%)"),
-    y = paste0("PC2 (", round(summary(pca_combined)$importance[2,2]*100, 1), "%)")
-  )
-##### Jimina's data
+# ---- Jimina's data ----
 #### Expression matrix
 # Define base path
 base_path <- "data/Anderson-Suthar_collab/Als_org_Jimena"
@@ -254,7 +254,7 @@ res_d50 <- topTable(fit2, coef = "d50_ALS", number = Inf)
 res_d75 <- topTable(fit2, coef = "d75_ALS", number = Inf)
 res_d120 <- topTable(fit2, coef = "d120_ALS", number = Inf)
 
-# ---- View Results ----
+# ---- graph Results ----
 library(UpSetR)
 sig_genes <- list(
   d30 = rownames(res_d30[res_d30$adj.P.Val < 0.05, ]),
@@ -287,7 +287,73 @@ ggplot(pca_df, aes(x = PC1, y = PC2, color = Stage, shape = Line)) +
     y = paste0("PC2 (", round(summary(pca)$importance[2,2]*100, 1), "%)")
   )
 
-#Save/load DESeq object
+
+
+# ---- Combined PCA ----
+shared_genes <- intersect(rownames(v$E), rownames(v_R2SDHF_sym))
+
+# Combine expression
+combined_expr <- cbind(v$E[shared_genes, ], v_R2SDHF_sym[shared_genes, ])
+
+# Batch correct
+batch <- factor(c(rep("organoid", ncol(v$E)), rep("R2SDHF", ncol(v_R2SDHF_sym))))
+corrected <- removeBatchEffect(combined_expr, batch = batch)
+
+# PCA
+pca_combined <- prcomp(t(corrected), scale. = TRUE)
+
+# Build plotting df
+pca_combined_df <- data.frame(
+  PC1 = pca_combined$x[, 1],
+  PC2 = pca_combined$x[, 2],
+  dataset = c(rep("organoid", ncol(v$E)), rep("R2SDHF", ncol(v_R2SDHF_sym))),
+  label = c(as.character(meta_filtered$Stage), paste0(meta_R2SDHF$treatment, "_", meta_R2SDHF$time, "h"))
+)
+
+library(RColorBrewer)
+
+label_colors <- c(
+  "d30"     = "#C6DBEF",
+  "d50"     = "#6BAED6",
+  "d75"     = "#2171B5",
+  "d120"    = "#08306B",
+  "Mock_0h" = "#2CA02C",
+  "TX_12h"  = "#FCBBA1",
+  "TX_24h"  = "#FB6A4A",
+  "TX_48h"  = "#CB181D",
+  "ROV_12h" = "#C994C7",
+  "ROV_24h" = "#88419D",
+  "ROV_48h" = "#4D004B"
+)
+
+ggplot(pca_combined_df, aes(x = PC1, y = PC2, color = label, shape = dataset)) +
+  geom_point(size = 3) +
+  scale_color_manual(values = label_colors) +
+  theme_minimal() +
+  labs(
+    x = paste0("PC1 (", round(summary(pca_combined)$importance[2,1]*100, 1), "%)"),
+    y = paste0("PC2 (", round(summary(pca_combined)$importance[2,2]*100, 1), "%)")
+  )
+
+
+set.seed(42)
+umap_combined <- umap(t(corrected), n_neighbors = 15, min_dist = 0.1)
+
+umap_df <- data.frame(
+  UMAP1 = umap_combined[, 1],
+  UMAP2 = umap_combined[, 2],
+  label = pca_combined_df$label,
+  dataset = pca_combined_df$dataset
+)
+
+ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = label, shape = dataset)) +
+  geom_point(size = 3) +
+  scale_color_manual(values = label_colors) +
+  theme_minimal()
+
+
+
+ #Save/load DESeq object
 # saveRDS(dds, "data/R2SDHF/r_objects/plasmo_dds_noMAD.rds")
 dds <- readRDS("data/R2SDHF/r_objects/plasmo_dds_noMAD.rds")
 
