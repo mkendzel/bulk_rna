@@ -1274,6 +1274,35 @@
       "Maintainer": "CRAN Team <CRAN@r-project.org>",
       "Repository": "CRAN"
     },
+    "RRHO2": {
+      "Package": "RRHO2",
+      "Version": "1.0",
+      "Source": "GitHub",
+      "Type": "Package",
+      "Title": "improved RRHO package",
+      "Date": "2016-12-11",
+      "Author": "Zhiguang Huo",
+      "Maintainer": "Zhiguang Huo <xiaoguang1988@gmail.com>",
+      "Depends": [
+        "VennDiagram",
+        "R(>= 2.14.1)"
+      ],
+      "Description": "correct the off diagonal part of RRHO plot",
+      "License": "GPL-3.0",
+      "RoxygenNote": "7.0.2",
+      "NeedsCompilation": "no",
+      "Suggests": [
+        "knitr",
+        "rmarkdown"
+      ],
+      "VignetteBuilder": "knitr",
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteRepo": "RRHO2",
+      "RemoteUsername": "RRHO2",
+      "RemoteRef": "HEAD",
+      "RemoteSha": "9d8de398c01a9ae965c53c92c3f416360c6193ef"
+    },
     "RSQLite": {
       "Package": "RSQLite",
       "Version": "2.4.6",
@@ -1889,6 +1918,34 @@
       "NeedsCompilation": "no",
       "Author": "Jake Conway [cre], Nils Gehlenborg [aut]",
       "Maintainer": "Jake Conway <jake_conway@hms.harvard.edu>",
+      "Repository": "CRAN"
+    },
+    "VennDiagram": {
+      "Package": "VennDiagram",
+      "Version": "1.8.2",
+      "Source": "Repository",
+      "Type": "Package",
+      "Title": "Generate High-Resolution Venn and Euler Plots",
+      "Authors@R": "c( person(given = \"Hanbo\", family = \"Chen\", role = \"aut\"), person(given = \"Paul\", family = \"Boutros\", role = \"cre\", email = \"pboutros@sbpdiscovery.org\"))",
+      "Imports": [
+        "methods"
+      ],
+      "Depends": [
+        "R (>= 3.5.0)",
+        "grid (>= 2.14.1)",
+        "futile.logger"
+      ],
+      "Description": "A set of functions to generate high-resolution Venn and Euler plots. Includes handling for several special cases, including two-case scaling, and extensive customization of plot shape and structure.",
+      "URL": "https://github.com/uclahs-cds/package-VennDiagram",
+      "BugReports": "https://github.com/uclahs-cds/package-VennDiagram/issues",
+      "License": "GPL-2",
+      "LazyLoad": "yes",
+      "Suggests": [
+        "testthat"
+      ],
+      "NeedsCompilation": "no",
+      "Author": "Hanbo Chen [aut], Paul Boutros [cre]",
+      "Maintainer": "Paul Boutros <pboutros@sbpdiscovery.org>",
       "Repository": "CRAN"
     },
     "XML": {
@@ -5910,6 +5967,30 @@
       "organism": "Homo sapiens",
       "species": "Human",
       "biocViews": "OrgDb, AnnotationData, Homo_sapiens, humanLLMappings",
+      "NeedsCompilation": "no"
+    },
+    "org.Mm.eg.db": {
+      "Package": "org.Mm.eg.db",
+      "Version": "3.22.0",
+      "Source": "Bioconductor",
+      "Title": "Genome wide annotation for Mouse",
+      "Description": "Genome wide annotation for Mouse, primarily based on mapping using Entrez Gene identifiers.",
+      "Author": "Marc Carlson",
+      "Maintainer": "Bioconductor Package Maintainer <maintainer@bioconductor.org>",
+      "Depends": [
+        "R (>= 2.7.0)",
+        "methods",
+        "AnnotationDbi (>= 1.71.1)"
+      ],
+      "Suggests": [
+        "DBI",
+        "annotate",
+        "RUnit"
+      ],
+      "License": "Artistic-2.0",
+      "organism": "Mus musculus",
+      "species": "Mouse",
+      "biocViews": "OrgDb, AnnotationData, Mus_musculus, mouseLLMappings",
       "NeedsCompilation": "no"
     },
     "patchwork": {
