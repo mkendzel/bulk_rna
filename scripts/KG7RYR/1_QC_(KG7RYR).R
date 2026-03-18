@@ -10,6 +10,7 @@ library(grid)
 library(readxl)
 library(org.Hs.eg.db)
 library(org.Mm.eg.db)
+library(tibble)
 # ----- Import data ----
 
 #Import expression matrix in tsv format
@@ -161,11 +162,11 @@ dds <- readRDS("data/KG7RYR/r_objects/plasmo_dds_raw.rds")
 dds_norm <- estimateSizeFactors(dds)
 normalized_counts <- counts(dds_norm, normalized = TRUE)
 
-saveRDS(normalized_counts, "data/KG7RYR/plasmo_counts_normalized.rds")
+saveRDS(normalized_counts, "data/KG7RYR/r_objects/plasmo_counts_normalized.rds")
 
 #Save/load Shrunk Data
-saveRDS(res_shrunk_list, "data/KG7RYR/plasmo_resShrink_qcmin10.rds")
-res_shrunk_list <- readRDS("data/KG7RYR/plasmo_resShrink_qcmin10.rds")
+saveRDS(res_shrunk_list, "data/KG7RYR/r_objects/plasmo_resShrink_qcmin10.rds")
+res_shrunk_list <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_qcmin10.rds")
 
 
 # ---- ADD mapping of gene names ----
@@ -177,21 +178,22 @@ all_ensembl <- res_shrunk_list |>
   as.character()
 
 # Remove version suffix if present (e.g. ENSG00000123456.7)
-all_ensembl_clean <- sub("\\..*$", "", all_ensembl)
 
 # ---- Build mapping table ----
 gene_map <- AnnotationDbi::select(
-  org.Hs.eg.db,
-  keys    = all_ensembl_clean,
+  org.Mm.eg.db,
+  keys    = all_ensembl,
   keytype = "ENSEMBL",
   columns = c("ENTREZID", "SYMBOL")
-) |>
+)
+
+gene_map <- gene_map |>
   as_tibble() |>
   distinct(ENSEMBL, .keep_all = TRUE) |>
-  rename(
+  dplyr::rename(
     ensembl_id = ENSEMBL,
     entrez_id  = ENTREZID,
-    SYMBOL     = SYMBOL
+    symbol     = SYMBOL
   )
 
 # ---- Append identifiers to every contrast ----
@@ -206,8 +208,8 @@ res_shrunk_list <- purrr::map(res_shrunk_list, function(df) {
   
 })
 
-saveRDS(res_shrunk_list, "data/KG7RYR/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
-res_shrunk_list <- readRDS("data/KG7RYR/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
+saveRDS(res_shrunk_list, "data/KG7RYR/r_objects/plasmo_resShrink_qcmin10_annotated.rds")
+res_shrunk_list <- readRDS("data/KG7RYR/Plasmo/plasmo_resShrink_qcmin10_annotated.rds")
 
 
 
