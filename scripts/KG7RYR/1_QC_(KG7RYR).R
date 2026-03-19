@@ -117,7 +117,7 @@ sample_info$tissue <- factor(sample_info$tissue)
 sample_info$treatment <- relevel(factor(sample_info$treatment), ref = "control")
 
 # =====================================
-# ---- set up deseq2 object (FULL) ----
+# ---- Full DESeq 2 Model ----
 # =====================================
 # Parse sample metadata from column names
 sample_info <- data.frame(
@@ -184,7 +184,7 @@ saveRDS(res_shrunk_list, "data/KG7RYR/r_objects/plasmo_resShrink_qcmin10.rds")
 res_shrunk_list <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_qcmin10.rds")
 
 
-# ---- Annotate genes to symbol id ----
+# Annotate genes to symbol id
 all_ensembl <- res_shrunk_list |>
   purrr::map(~ rownames(.x)) |>
   unlist(use.names = FALSE) |>
@@ -226,7 +226,7 @@ res_shrunk_list <- readRDS("data/KG7RYR/Plasmo/plasmo_resShrink_qcmin10_annotate
 
 
 # ==================================
-# ---- Tissue-specific analyses ----
+# ---- Tissue-specific DESeq 2 analyses ----
 # ==================================
 # ---- Lung ----
 
