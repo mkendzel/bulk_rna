@@ -103,7 +103,22 @@ counts <- counts[, colnames(counts) != "d_spleen_9"] # DS18
 saveRDS(counts, "data/KG7RYR/r_objects/plasmo_counts(no_CS12_DS18).rds")
 counts <- readRDS("data/KG7RYR/r_objects/plasmo_counts(no_CS12_DS18).rds")
 
-# ---- set up deseq2 object ----
+# Parse sample metadata from column names
+sample_info <- data.frame(
+  sample = colnames(counts),
+  treatment = gsub("_[a-z]+_[0-9]+$", "", colnames(counts)),
+  tissue = gsub("^[a-z]+_([a-z]+)_[0-9]+$", "\\1", colnames(counts)),
+  row.names = colnames(counts)
+)
+
+# Convert to factors
+sample_info$treatment <- factor(sample_info$treatment)
+sample_info$tissue <- factor(sample_info$tissue)
+sample_info$treatment <- relevel(factor(sample_info$treatment), ref = "control")
+
+# =====================================
+# ---- set up deseq2 object (FULL) ----
+# =====================================
 # Parse sample metadata from column names
 sample_info <- data.frame(
   sample = colnames(counts),
@@ -169,17 +184,14 @@ saveRDS(res_shrunk_list, "data/KG7RYR/r_objects/plasmo_resShrink_qcmin10.rds")
 res_shrunk_list <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_qcmin10.rds")
 
 
-# ---- ADD mapping of gene names ----
-# Ensembl IDs across contrasts ----
+# ---- Annotate genes to symbol id ----
 all_ensembl <- res_shrunk_list |>
   purrr::map(~ rownames(.x)) |>
   unlist(use.names = FALSE) |>
   unique() |>
   as.character()
 
-# Remove version suffix if present (e.g. ENSG00000123456.7)
-
-# ---- Build mapping table ----
+# Build mapping table
 gene_map <- AnnotationDbi::select(
   org.Mm.eg.db,
   keys    = all_ensembl,
@@ -196,7 +208,7 @@ gene_map <- gene_map |>
     symbol     = SYMBOL
   )
 
-# ---- Append identifiers to every contrast ----
+# Append identifiers to every contrast
 res_shrunk_list <- purrr::map(res_shrunk_list, function(df) {
   
   df |>
@@ -208,8 +220,227 @@ res_shrunk_list <- purrr::map(res_shrunk_list, function(df) {
   
 })
 
+# Save and load annotated list
 saveRDS(res_shrunk_list, "data/KG7RYR/r_objects/plasmo_resShrink_qcmin10_annotated.rds")
 res_shrunk_list <- readRDS("data/KG7RYR/Plasmo/plasmo_resShrink_qcmin10_annotated.rds")
+
+
+# ==================================
+# ---- Tissue-specific analyses ----
+# ==================================
+# ---- Lung ----
+
+#Subset to lung
+lung_samples <- sample_info$tissue == "lung"
+counts_lung <- counts[, lung_samples]
+info_lung <- sample_info[lung_samples, ]
+info_lung$treatment <- relevel(droplevels(info_lung$treatment), ref = "control")
+
+# DESEQ object creation
+dds_lung <- DESeqDataSetFromMatrix(
+  countData = round(as.matrix(counts_lung)),
+  colData = info_lung,
+  design = ~ treatment
+)
+
+#Subset low expression genes out
+keep <- rowSums(DESeq2::counts(dds_lung) >= 10) >= 5
+dds_lung <- dds_lung[keep, ]
+
+#variance stabilization of pca
+vsd_lung <- DESeq2::vst(dds_lung)
+DESeq2::plotPCA(vsd_lung, intgroup = "treatment")
+
+#run DESeq2
+dds_lung <- DESeq2::DESeq(dds_lung, minReplicatesForReplace = Inf)
+
+# Shrink logfold2 estimations
+coef_names_lung <- DESeq2::resultsNames(dds_lung)[-1]
+res_shrunk_lung <- setNames(
+  lapply(coef_names_lung, function(coef_name) {
+    DESeq2::lfcShrink(dds_lung, coef = coef_name, type = "apeglm")
+  }),
+  coef_names_lung
+)
+
+#Add all comps to results
+res_wald_lung <- setNames(
+  lapply(coef_names_lung, function(coef_name) {
+    DESeq2::results(dds_lung, name = coef_name)
+  }),
+  coef_names_lung
+)
+res_wald_lung[["treatment_cl_vs_d"]] <- DESeq2::results(dds_lung, contrast = c("treatment", "cl", "d"))
+
+res_lung <- DESeq2::results(dds_lung)
+DESeq2::plotMA(res_lung, ylim = c(-5, 5))
+
+#Save/load DESeq object
+saveRDS(dds_lung, "data/KG7RYR/r_objects/plasmo_dds_lung_raw.rds")
+dds_lung <- readRDS("data/KG7RYR/r_objects/plasmo_dds_lung_raw.rds")
+
+saveRDS(counts(dds_lung, normalized = TRUE), "data/KG7RYR/r_objects/plasmo_counts_lung_normalized.rds")
+normalized_counts_lung <- readRDS("data/KG7RYR/r_objects/plasmo_counts_lung_normalized.rds")
+
+saveRDS(res_shrunk_lung, "data/KG7RYR/r_objects/plasmo_resShrink_lung_qcmin10.rds")
+res_shrunk_lung <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_lung_qcmin10.rds")
+
+saveRDS(res_wald_lung, "data/KG7RYR/r_objects/plasmo_resWald_lung_qcmin10.rds")
+res_wald_lung <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_lung_qcmin10.rds")
+
+# Annotated object
+all_ensembl_lung <- res_shrunk_lung |>
+  purrr::map(~ rownames(.x)) |>
+  unlist(use.names = FALSE) |>
+  unique() |>
+  as.character()
+
+gene_map_lung <- AnnotationDbi::select(
+  org.Mm.eg.db,
+  keys    = all_ensembl_lung,
+  keytype = "ENSEMBL",
+  columns = c("ENTREZID", "SYMBOL")
+)
+gene_map_lung <- gene_map_lung |>
+  as_tibble() |>
+  distinct(ENSEMBL, .keep_all = TRUE) |>
+  dplyr::rename(
+    ensembl_id = ENSEMBL,
+    entrez_id  = ENTREZID,
+    symbol     = SYMBOL
+  )
+
+res_shrunk_lung <- purrr::map(res_shrunk_lung, function(df) {
+  df |>
+    as.data.frame() |>
+    rownames_to_column("ensembl_id") |>
+    mutate(ensembl_id = sub("\\..*$", "", ensembl_id)) |>
+    left_join(gene_map_lung, by = "ensembl_id") |>
+    as_tibble()
+})
+
+res_wald_lung <- purrr::map(res_wald_lung, function(df) {
+  df |>
+    as.data.frame() |>
+    rownames_to_column("ensembl_id") |>
+    mutate(ensembl_id = sub("\\..*$", "", ensembl_id)) |>
+    left_join(gene_map_lung, by = "ensembl_id") |>
+    as_tibble()
+})
+
+# Save Annotated
+saveRDS(res_shrunk_lung, "data/KG7RYR/r_objects/plasmo_resShrink_lung_qcmin10_annotated.rds")
+res_shrunk_lung <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_lung_qcmin10_annotated.rds")
+
+saveRDS(res_wald_lung, "data/KG7RYR/r_objects/plasmo_resWald_lung_qcmin10_annotated.rds")
+res_wald_lung <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_lung_qcmin10_annotated.rds")
+
+# ---- Spleen ----
+# Subsample to spleen
+spleen_samples <- sample_info$tissue == "spleen"
+counts_spleen <- counts[, spleen_samples]
+info_spleen <- sample_info[spleen_samples, ]
+info_spleen$treatment <- relevel(droplevels(info_spleen$treatment), ref = "control")
+
+# Create DESEQ2 object
+dds_spleen <- DESeqDataSetFromMatrix(
+  countData = round(as.matrix(counts_spleen)),
+  colData = info_spleen,
+  design = ~ treatment
+)
+
+# Remove lowly expressed genes
+keep <- rowSums(DESeq2::counts(dds_spleen) >= 10) >= 5
+dds_spleen <- dds_spleen[keep, ]
+
+#Variance stabalization for PCA
+vsd_spleen <- DESeq2::vst(dds_spleen)
+DESeq2::plotPCA(vsd_spleen, intgroup = "treatment")
+
+# Run DESeq2
+dds_spleen <- DESeq2::DESeq(dds_spleen, minReplicatesForReplace = Inf)
+
+#Shrunken results
+coef_names_spleen <- DESeq2::resultsNames(dds_spleen)[-1]
+res_shrunk_spleen <- setNames(
+  lapply(coef_names_spleen, function(coef_name) {
+    DESeq2::lfcShrink(dds_spleen, coef = coef_name, type = "apeglm")
+  }),
+  coef_names_spleen
+)
+
+#Wald test stat results (full comp)
+res_wald_spleen <- setNames(
+  lapply(coef_names_spleen, function(coef_name) {
+    DESeq2::results(dds_spleen, name = coef_name)
+  }),
+  coef_names_spleen
+)
+res_wald_spleen[["treatment_cl_vs_d"]] <- DESeq2::results(dds_spleen, contrast = c("treatment", "cl", "d"))
+
+res_spleen <- DESeq2::results(dds_spleen)
+DESeq2::plotMA(res_spleen, ylim = c(-5, 5))
+
+#Save and load checkpoints
+saveRDS(dds_spleen, "data/KG7RYR/r_objects/plasmo_dds_spleen_raw.rds")
+dds_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_dds_spleen_raw.rds")
+
+saveRDS(counts(dds_spleen, normalized = TRUE), "data/KG7RYR/r_objects/plasmo_counts_spleen_normalized.rds")
+normalized_counts_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_counts_spleen_normalized.rds")
+
+saveRDS(res_shrunk_spleen, "data/KG7RYR/r_objects/plasmo_resShrink_spleen_qcmin10.rds")
+res_shrunk_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_spleen_qcmin10.rds")
+
+saveRDS(res_wald_spleen, "data/KG7RYR/r_objects/plasmo_resWald_spleen_qcmin10.rds")
+res_wald_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_spleen_qcmin10.rds")
+
+#Annotated
+
+all_ensembl_spleen <- res_shrunk_spleen |>
+  purrr::map(~ rownames(.x)) |>
+  unlist(use.names = FALSE) |>
+  unique() |>
+  as.character()
+
+gene_map_spleen <- AnnotationDbi::select(
+  org.Mm.eg.db,
+  keys    = all_ensembl_spleen,
+  keytype = "ENSEMBL",
+  columns = c("ENTREZID", "SYMBOL")
+)
+gene_map_spleen <- gene_map_spleen |>
+  as_tibble() |>
+  distinct(ENSEMBL, .keep_all = TRUE) |>
+  dplyr::rename(
+    ensembl_id = ENSEMBL,
+    entrez_id  = ENTREZID,
+    symbol     = SYMBOL
+  )
+
+res_shrunk_spleen <- purrr::map(res_shrunk_spleen, function(df) {
+  df |>
+    as.data.frame() |>
+    rownames_to_column("ensembl_id") |>
+    mutate(ensembl_id = sub("\\..*$", "", ensembl_id)) |>
+    left_join(gene_map_spleen, by = "ensembl_id") |>
+    as_tibble()
+})
+
+res_wald_spleen <- purrr::map(res_wald_spleen, function(df) {
+  df |>
+    as.data.frame() |>
+    rownames_to_column("ensembl_id") |>
+    mutate(ensembl_id = sub("\\..*$", "", ensembl_id)) |>
+    left_join(gene_map_spleen, by = "ensembl_id") |>
+    as_tibble()
+})
+
+# save/load
+saveRDS(res_shrunk_spleen, "data/KG7RYR/r_objects/plasmo_resShrink_spleen_qcmin10_annotated.rds")
+res_shrunk_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_spleen_qcmin10_annotated.rds")
+
+saveRDS(res_wald_spleen, "data/KG7RYR/r_objects/plasmo_resWald_spleen_qcmin10_annotated.rds")
+res_wald_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_spleen_qcmin10_annotated.rds")
 
 
 
