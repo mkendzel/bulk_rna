@@ -11,6 +11,8 @@ library(readxl)
 library(org.Hs.eg.db)
 library(org.Mm.eg.db)
 library(tibble)
+library(TissueEnrich)
+library(GSEABase)
 # ----- Import data ----
 
 #Import expression matrix in tsv format
@@ -37,21 +39,21 @@ colnames(counts) <- sub("_count$", "", colnames(counts))
 
 # rename columns
 rename_map <- c(
-  "KG7RYR_1"  = "control_lung_1",
-  "KG7RYR_2"  = "control_lung_2",
-  "KG7RYR_3"  = "control_lung_3",
+  "KG7RYR_1"  = "control_liver_1",
+  "KG7RYR_2"  = "control_liver_2",
+  "KG7RYR_3"  = "control_liver_3",
   "KG7RYR_4"  = "control_spleen_1",
   "KG7RYR_5"  = "control_spleen_2",
   "KG7RYR_6"  = "control_spleen_3",
-  "KG7RYR_7"  = "cl_lung_4",
-  "KG7RYR_8"  = "cl_lung_5",
-  "KG7RYR_9"  = "cl_lung_6",
+  "KG7RYR_7"  = "cl_liver_4",
+  "KG7RYR_8"  = "cl_liver_5",
+  "KG7RYR_9"  = "cl_liver_6",
   "KG7RYR_10" = "cl_spleen_4",
   "KG7RYR_11" = "cl_spleen_5",
   "KG7RYR_12" = "cl_spleen_6",
-  "KG7RYR_13" = "d_lung_7",
-  "KG7RYR_14" = "d_lung_8",
-  "KG7RYR_15" = "d_lung_9",
+  "KG7RYR_13" = "d_liver_7",
+  "KG7RYR_14" = "d_liver_8",
+  "KG7RYR_15" = "d_liver_9",
   "KG7RYR_16" = "d_spleen_7",
   "KG7RYR_17" = "d_spleen_8",
   "KG7RYR_18" = "d_spleen_9"
@@ -330,10 +332,38 @@ res_wald_lung <- purrr::map(res_wald_lung, function(df) {
 
 # Save Annotated
 saveRDS(res_shrunk_lung, "data/KG7RYR/r_objects/plasmo_resShrink_lung_qcmin10_annotated.rds")
-res_shrunk_lung <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_lung_qcmin10_annotated.rds")
-
 saveRDS(res_wald_lung, "data/KG7RYR/r_objects/plasmo_resWald_lung_qcmin10_annotated.rds")
+
+res_shrunk_lung <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_lung_qcmin10_annotated.rds")
 res_wald_lung <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_lung_qcmin10_annotated.rds")
+
+# Tissue check
+
+vsd_liver <- assay(vst(dds_lung, blind = TRUE))
+
+results_list_liver <- list()
+for (s in colnames(vsd_liver)) {
+  top_genes <- names(sort(vsd_liver[, s], decreasing = TRUE))[1:500]
+  
+  gs <- GeneSet(
+    geneIds = top_genes,
+    organism = "Mus Musculus",
+    geneIdType = ENSEMBLIdentifier()
+  )
+  
+  enrich <- teEnrichment(inputGenes = gs, rnaSeqDataset = 3)
+  res <- as.data.frame(assay(enrich[[1]]))
+  results_list_liver[[s]] <- res
+}
+
+for (s in names(results_list_liver)) {
+  res <- results_list_liver[[s]]
+  top_idx <- which.max(res$Tissue.Specific.Genes)
+  cat(s, "->", rownames(res)[top_idx], 
+      "(", res$Tissue.Specific.Genes[top_idx], "genes, p =", 
+      10^(-res$Log10PValue[top_idx]), ")\n")
+}
+
 
 # ---- Spleen ----
 # Subsample to spleen
@@ -437,10 +467,40 @@ res_wald_spleen <- purrr::map(res_wald_spleen, function(df) {
 
 # save/load
 saveRDS(res_shrunk_spleen, "data/KG7RYR/r_objects/plasmo_resShrink_spleen_qcmin10_annotated.rds")
+saveRDS(res_wald_spleen, "data/KG7RYR/r_objects/plasmo_resWald_spleen_qcmin10_annotated.rds")
+
+res_wald_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_spleen_qcmin10_annotated.rds")
 res_shrunk_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_spleen_qcmin10_annotated.rds")
 
-saveRDS(res_wald_spleen, "data/KG7RYR/r_objects/plasmo_resWald_spleen_qcmin10_annotated.rds")
-res_wald_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_spleen_qcmin10_annotated.rds")
+
+# Tissue check
+
+vsd_spleen <- assay(vst(dds_spleen, blind = TRUE))
+
+# Average expression across all 9 samples
+results_list_spleen <- list()
+
+for (s in colnames(vsd_spleen)) {
+  top_genes <- names(sort(vsd_spleen[, s], decreasing = TRUE))[1:500]
+  
+  gs <- GeneSet(
+    geneIds = top_genes,
+    organism = "Mus Musculus",
+    geneIdType = ENSEMBLIdentifier()
+  )
+  
+  enrich <- teEnrichment(inputGenes = gs, rnaSeqDataset = 3)
+  res <- as.data.frame(assay(enrich[[1]]))
+  results_list_spleen[[s]] <- res
+}
+
+for (s in names(results_list_spleen)) {
+  res <- results_list_spleen[[s]]
+  top_idx <- which.max(res$Tissue.Specific.Genes)
+  cat(s, "->", rownames(res)[top_idx], 
+      "(", res$Tissue.Specific.Genes[top_idx], "genes, p =", 
+      10^(-res$Log10PValue[top_idx]), ")\n")
+}
 
 
 
@@ -449,9 +509,8 @@ res_wald_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_spleen_qcmin10_
 
 
 
+# =========================
+# ---- Tissue Check ----
+# ========================
 
-
-
-
-
-
+# Tissue Chec
