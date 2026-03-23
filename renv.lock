@@ -799,6 +799,51 @@
       "NeedsCompilation": "yes",
       "Author": "Guangchuang Yu [aut, cre], Alexey Stukalov [ctb], Pingfan Guo [ctb], Chuanle Xiao [ctb], Lluís Revilla Sancho [ctb]"
     },
+    "GSEABase": {
+      "Package": "GSEABase",
+      "Version": "1.72.0",
+      "Source": "Bioconductor",
+      "Type": "Package",
+      "Title": "Gene set enrichment data structures and methods",
+      "Authors@R": "c( person(\"Martin\", \"Morgan\", role = \"aut\"), person(\"Seth\", \"Falcon\", role = \"aut\"), person(\"Robert\", \"Gentleman\", role = \"aut\"), person(\"Paul\", \"Villafuerte\", role = \"ctb\", comment = \"'GSEABase' vignette translation from Sweave to Rmarkdown / HTML\"), person(\"Bioconductor Package Maintainer\", role = \"cre\", email = \"maintainer@bioconductor.org\" ))",
+      "Description": "This package provides classes and methods to support Gene Set Enrichment Analysis (GSEA).",
+      "License": "Artistic-2.0",
+      "Depends": [
+        "R (>= 2.6.0)",
+        "BiocGenerics (>= 0.13.8)",
+        "Biobase (>= 2.17.8)",
+        "annotate (>= 1.45.3)",
+        "methods",
+        "graph (>= 1.37.2)"
+      ],
+      "Suggests": [
+        "hgu95av2.db",
+        "GO.db",
+        "org.Hs.eg.db",
+        "Rgraphviz",
+        "ReportingTools",
+        "testthat",
+        "BiocStyle",
+        "knitr",
+        "RUnit"
+      ],
+      "Imports": [
+        "AnnotationDbi",
+        "XML"
+      ],
+      "LazyLoad": "yes",
+      "Collate": "utilities.R AAA.R AllClasses.R AllGenerics.R getObjects.R methods-CollectionType.R methods-ExpressionSet.R methods-GeneColorSet.R methods-GeneIdentifierType.R methods-GeneSet.R methods-GeneSetCollection.R methods-OBOCollection.R",
+      "VignetteBuilder": "knitr",
+      "biocViews": "GeneExpression, GeneSetEnrichment, GraphAndNetwork, GO, KEGG",
+      "Config/pak/sysreqs": "libpng-dev libxml2-dev libssl-dev zlib1g-dev",
+      "Repository": "https://bioc-release.r-universe.dev",
+      "RemoteUrl": "https://github.com/bioc/GSEABase",
+      "RemoteRef": "RELEASE_3_22",
+      "RemoteSha": "8f4e176962268e1a366d812f615c8ae6bc98b0f8",
+      "NeedsCompilation": "no",
+      "Author": "Martin Morgan [aut], Seth Falcon [aut], Robert Gentleman [aut], Paul Villafuerte [ctb] ('GSEABase' vignette translation from Sweave to Rmarkdown / HTML), Bioconductor Package Maintainer [cre]",
+      "Maintainer": "Bioconductor Package Maintainer <maintainer@bioconductor.org>"
+    },
     "GenomicRanges": {
       "Package": "GenomicRanges",
       "Version": "1.62.1",
@@ -1967,6 +2012,44 @@
       "Author": "Martin Morgan [aut], Valerie Obenchain [aut], Jim Hester [aut], Hervé Pagès [aut, cre]",
       "Maintainer": "Hervé Pagès <hpages.on.github@gmail.com>"
     },
+    "TissueEnrich": {
+      "Package": "TissueEnrich",
+      "Version": "1.30.0",
+      "Source": "Bioconductor",
+      "Type": "Package",
+      "Title": "Tissue-specific gene enrichment analysis",
+      "Authors@R": "c(person(\"Ashish Jain\", email=\"jain.ashishjain1@gmail.com\", role=c(\"aut\", \"cre\")), person(\"Geetu Tuteja\", email=\"geetu@iastate.edu\", role=c(\"aut\")))",
+      "Description": "The TissueEnrich package is used to calculate enrichment of tissue-specific genes in a set of input genes. For example, the user can input the most highly expressed genes from RNA-Seq data, or gene co-expression modules to determine which tissue-specific genes are enriched in those datasets. Tissue-specific genes were defined by processing RNA-Seq data from the Human Protein Atlas (HPA) (Uhlén et al. 2015), GTEx (Ardlie et al. 2015), and mouse ENCODE (Shen et al. 2012) using the algorithm from the HPA (Uhlén et al. 2015).The hypergeometric test is being used to determine if the tissue-specific genes are enriched among the input genes. Along with tissue-specific gene enrichment, the TissueEnrich package can also be used to define tissue-specific genes from expression datasets provided by the user, which can then be used to calculate tissue-specific gene enrichments.",
+      "License": "MIT + file LICENSE",
+      "VignetteBuilder": "knitr",
+      "Depends": [
+        "R (>= 3.5)",
+        "ggplot2 (>= 2.2.1)",
+        "SummarizedExperiment (>= 1.6.5)",
+        "GSEABase (>= 1.38.2)"
+      ],
+      "Imports": [
+        "dplyr (>= 0.7.3)",
+        "tidyr (>= 0.8.0)",
+        "stats"
+      ],
+      "Suggests": [
+        "knitr",
+        "rmarkdown",
+        "testthat"
+      ],
+      "Encoding": "UTF-8",
+      "RoxygenNote": "7.3.1",
+      "biocViews": "GeneSetEnrichment, GeneExpression, Sequencing",
+      "Config/pak/sysreqs": "libicu-dev libpng-dev libxml2-dev libssl-dev zlib1g-dev",
+      "Repository": "https://bioc-release.r-universe.dev",
+      "RemoteUrl": "https://github.com/bioc/TissueEnrich",
+      "RemoteRef": "RELEASE_3_22",
+      "RemoteSha": "a3786804440c3bd6a0c67b6bc5e53ff6c76fb182",
+      "NeedsCompilation": "no",
+      "Author": "Ashish Jain [aut, cre], Geetu Tuteja [aut]",
+      "Maintainer": "Ashish Jain <jain.ashishjain1@gmail.com>"
+    },
     "UpSetR": {
       "Package": "UpSetR",
       "Version": "1.4.0",
@@ -2120,6 +2203,60 @@
       "NeedsCompilation": "no",
       "Author": "Tony Plate [aut, cre], Richard Heiberger [aut]",
       "Repository": "CRAN"
+    },
+    "annotate": {
+      "Package": "annotate",
+      "Version": "1.88.0",
+      "Source": "Bioconductor",
+      "Title": "Annotation for microarrays",
+      "Author": "R. Gentleman",
+      "Authors@R": "c( person(\"Jeff\", \"Gentry\", role = \"aut\"), person(\"Kritika\", \"Verma\", role = \"ctb\", comment = \"Converted chromLOC vignette from Sweave to RMarkdown / HTML.\"), person(\"Manvi\", \"Yaduvanshi\", role = \"ctb\", comment = \"Converted useDataPkgs vignette from Sweave to RMarkdown / HTML.\"), person(\"Bioconductor Package Maintainer\", email = \"maintainer@bioconductor.org\", role = \"cre\"))",
+      "Description": "Using R enviroments for annotation.",
+      "Depends": [
+        "R (>= 2.10)",
+        "AnnotationDbi (>= 1.27.5)",
+        "XML"
+      ],
+      "Imports": [
+        "Biobase",
+        "DBI",
+        "xtable",
+        "graphics",
+        "utils",
+        "stats",
+        "methods",
+        "BiocGenerics (>= 0.13.8)",
+        "httr"
+      ],
+      "Suggests": [
+        "hgu95av2.db",
+        "genefilter",
+        "Biostrings (>= 2.25.10)",
+        "IRanges",
+        "rae230a.db",
+        "rae230aprobe",
+        "tkWidgets",
+        "GO.db",
+        "org.Hs.eg.db",
+        "org.Mm.eg.db",
+        "humanCHRLOC",
+        "Rgraphviz",
+        "RUnit",
+        "BiocStyle",
+        "knitr"
+      ],
+      "VignetteBuilder": "knitr",
+      "License": "Artistic-2.0",
+      "LazyLoad": "yes",
+      "Collate": "AllGenerics.R ACCNUMStats.R Amat.R AnnMaps.R chromLocation.R compatipleVersions.R findNeighbors.R getData.R getPMInfo.R getSeq4ACC.R GOhelpers.R homoData.R html.R isValidKey.R LL2homology.R pmid2MIAME.R pubMedAbst.R query.R readGEOAnn.R serializeEnv.R blastSequences.R zzz.R test_annotate_package.R",
+      "biocViews": "Annotation, Pathways, GO",
+      "Config/pak/sysreqs": "libpng-dev libxml2-dev libssl-dev zlib1g-dev",
+      "Repository": "https://bioc-release.r-universe.dev",
+      "RemoteUrl": "https://github.com/bioc/annotate",
+      "RemoteRef": "RELEASE_3_22",
+      "RemoteSha": "bc0d5a07cf29902d84eb8b9594ff66103e484faf",
+      "NeedsCompilation": "no",
+      "Maintainer": "Bioconductor Package Maintainer <maintainer@bioconductor.org>"
     },
     "ape": {
       "Package": "ape",
@@ -8672,6 +8809,37 @@
       "Author": "Hadley Wickham [aut], Jim Hester [aut], Jeroen Ooms [aut, cre], Posit Software, PBC [cph, fnd], R Foundation [ctb] (Copy of R-project homepage cached as example)",
       "Maintainer": "Jeroen Ooms <jeroenooms@gmail.com>",
       "Repository": "CRAN"
+    },
+    "xtable": {
+      "Package": "xtable",
+      "Version": "1.8-8",
+      "Source": "Repository",
+      "Date": "2026-02-20",
+      "Title": "Export Tables to LaTeX or HTML",
+      "Authors@R": "c(person(\"David B.\", \"Dahl\", role=\"aut\"), person(\"David\", \"Scott\", role=c(\"aut\",\"cre\"), email=\"d.scott@auckland.ac.nz\"), person(\"Charles\", \"Roosen\", role=\"aut\"), person(\"Arni\", \"Magnusson\", role=\"aut\"), person(\"Jonathan\", \"Swinton\", role=\"aut\"), person(\"Ajay\", \"Shah\", role=\"ctb\"), person(\"Arne\", \"Henningsen\", role=\"ctb\"), person(\"Benno\", \"Puetz\", role=\"ctb\"), person(\"Bernhard\", \"Pfaff\", role=\"ctb\"), person(\"Claudio\", \"Agostinelli\", role=\"ctb\"), person(\"Claudius\", \"Loehnert\", role=\"ctb\"), person(\"David\", \"Mitchell\", role=\"ctb\"), person(\"David\", \"Whiting\", role=\"ctb\"), person(\"Fernando da\", \"Rosa\", role=\"ctb\"), person(\"Guido\", \"Gay\", role=\"ctb\"), person(\"Guido\", \"Schulz\", role=\"ctb\"), person(\"Ian\", \"Fellows\", role=\"ctb\"), person(\"Jeff\", \"Laake\", role=\"ctb\"), person(\"John\", \"Walker\", role=\"ctb\"), person(\"Jun\", \"Yan\", role=\"ctb\"), person(\"Liviu\", \"Andronic\", role=\"ctb\"), person(\"Markus\", \"Loecher\", role=\"ctb\"), person(\"Martin\", \"Gubri\", role=\"ctb\"), person(\"Matthieu\", \"Stigler\", role=\"ctb\"), person(\"Robert\", \"Castelo\", role=\"ctb\"), person(\"Seth\", \"Falcon\", role=\"ctb\"), person(\"Stefan\", \"Edwards\", role=\"ctb\"), person(\"Sven\", \"Garbade\", role=\"ctb\"), person(\"Uwe\", \"Ligges\", role=\"ctb\"))",
+      "Maintainer": "David Scott <d.scott@auckland.ac.nz>",
+      "Imports": [
+        "stats",
+        "utils",
+        "methods"
+      ],
+      "Suggests": [
+        "knitr",
+        "zoo",
+        "survival",
+        "glue",
+        "tinytex"
+      ],
+      "VignetteBuilder": "knitr",
+      "Description": "Coerce data to LaTeX and HTML tables.",
+      "URL": "http://xtable.r-forge.r-project.org/",
+      "Depends": [
+        "R (>= 2.10.0)"
+      ],
+      "License": "GPL (>= 2)",
+      "Repository": "CRAN",
+      "NeedsCompilation": "no",
+      "Author": "David B. Dahl [aut], David Scott [aut, cre], Charles Roosen [aut], Arni Magnusson [aut], Jonathan Swinton [aut], Ajay Shah [ctb], Arne Henningsen [ctb], Benno Puetz [ctb], Bernhard Pfaff [ctb], Claudio Agostinelli [ctb], Claudius Loehnert [ctb], David Mitchell [ctb], David Whiting [ctb], Fernando da Rosa [ctb], Guido Gay [ctb], Guido Schulz [ctb], Ian Fellows [ctb], Jeff Laake [ctb], John Walker [ctb], Jun Yan [ctb], Liviu Andronic [ctb], Markus Loecher [ctb], Martin Gubri [ctb], Matthieu Stigler [ctb], Robert Castelo [ctb], Seth Falcon [ctb], Stefan Edwards [ctb], Sven Garbade [ctb], Uwe Ligges [ctb]"
     },
     "yaml": {
       "Package": "yaml",
