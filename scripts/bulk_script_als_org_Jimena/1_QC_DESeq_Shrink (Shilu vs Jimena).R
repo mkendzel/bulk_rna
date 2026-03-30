@@ -145,7 +145,7 @@ metadata <- as.data.frame(metadata)
 # Filter metadata for hSPS organoids with Ctrx coating
 meta_filtered <- metadata %>%
   filter(Organoid == "hSpS", Coating == "Ctrx", Line %in% c("ALS", "control")) %>%
-  select(Admera_Health_ID, Patient, AgeOrg, Line, Replicate, Sex)
+  dplyr::select(Admera_Health_ID, Patient, AgeOrg, Line, Replicate, Sex)
 
 meta_filtered %>%
   group_by(AgeOrg, Sex, Line) %>%
@@ -170,7 +170,7 @@ meta_filtered$Stage <- case_when(
 meta_filtered$Stage <- factor(meta_filtered$Stage, levels = c("d30", "d50", "d75", "d120"))
 
 #Count matrix
-counts <- expr %>% select(all_of(meta_filtered$Admera_Health_ID))
+counts <- expr %>% dplyr::select(all_of(meta_filtered$Admera_Health_ID))
 
 # ---- QC For samples ----
 qc_list <- lapply(colnames(counts), function(s) {
@@ -290,15 +290,14 @@ ggplot(pca_df, aes(x = PC1, y = PC2, color = Stage, shape = Line)) +
 
 
 # ---- Combined PCA ----
-shared_genes <- intersect(rownames(v$E), rownames(v_R2SDHF_sym))
+# Build biological group factor across both experiments
+bio_group <- factor(c(
+  ifelse(meta_filtered$Line == "ALS", "disease", "control"),
+  ifelse(meta_R2SDHF$treatment == "Mock", "control", "disease")
+))
 
-# Combine expression
-combined_expr <- cbind(v$E[shared_genes, ], v_R2SDHF_sym[shared_genes, ])
-
-# Batch correct
-batch <- factor(c(rep("organoid", ncol(v$E)), rep("R2SDHF", ncol(v_R2SDHF_sym))))
-corrected <- removeBatchEffect(combined_expr, batch = batch)
-
+design <- model.matrix(~bio_group)
+corrected <- removeBatchEffect(combined_expr, batch = batch, design = design)
 # PCA
 pca_combined <- prcomp(t(corrected), scale. = TRUE)
 
@@ -352,7 +351,45 @@ ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = label, shape = dataset)) +
   theme_minimal()
 
 
+# =========================
+# ---- RRHO2 ANalysis ----
+# ========================
+library(RRHO2)
 
+# --- Experiment 1: Organoid (ALS vs control)
+group_org <- factor(meta_filtered$Line, levels = c("control", "ALS"))
+design_org <- model.matrix(~group_org)
+fit_org <- lmFit(v, design_org)
+fit_org <- eBayes(fit_org)
+de_org <- topTable(fit_org, coef = 2, number = Inf)
+
+# --- Experiment 2: R2SDHF (TX/ROV vs Mock) 
+group_r2 <- factor(ifelse(meta_R2SDHF$treatment == "Mock", "Mock", "disease"), levels = c("Mock", "disease"))
+design_r2 <- model.matrix(~group_r2)
+fit_r2 <- lmFit(v_R2SDHF_sym, design_r2)
+fit_r2 <- eBayes(fit_r2)
+de_r2 <- topTable(fit_r2, coef = 2, number = Inf)
+
+# RRHO2 expects a data frame with gene name and signed -log10(p-value)
+shared <- intersect(rownames(de_org), rownames(de_r2))
+
+list1 <- data.frame(
+  gene = shared,
+  value = -log10(de_org[shared, "P.Value"]) * sign(de_org[shared, "logFC"])
+)
+
+list2 <- data.frame(
+  gene = shared,
+  value = -log10(de_r2[shared, "P.Value"]) * sign(de_r2[shared, "logFC"])
+)
+
+rrho_res <- RRHO2_initialize(list1, list2, labels = c("Organoid ALS vs Ctrl", "R2SDHF Disease vs Mock"), log10.ind = TRUE)
+RRHO2_heatmap(rrho_res)
+
+
+# =========================
+# ---- old ----
+# ========================
  #Save/load DESeq object
 # saveRDS(dds, "data/R2SDHF/r_objects/plasmo_dds_noMAD.rds")
 dds <- readRDS("data/R2SDHF/r_objects/plasmo_dds_noMAD.rds")
