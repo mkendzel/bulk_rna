@@ -1,335 +1,188 @@
 # ---- Libraries ----
-library(tidyverse)
-library(clusterProfiler)
-library(org.Hs.eg.db)
-library(pathview)
-library(openxlsx)
-library(clusterProfiler)
-library(msigdbr)
-library(dplyr)
-library(tibble)
-library(purrr)
+library(decoupleR)
+library(OmnipathR)
+library(ggplot2)
 # ---- Data Load ----
-res_shrunk_list <- readRDS("data/R2SDHF/Plasmo/Plasmo_resShrink_noMAD.rds")
+# Get mouse DoRothEA network or Collec
+tfnet <- get_dorothea(organism = "mouse", levels = c("A", "B", "C"))
+tfnet <- get_collectri(organism = "mouse", split_complexes = FALSE)
 
+# Full interactive model results
+res_shrunk_list <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_qcmin10_annotated.rds")
+dds <- readRDS("data/KG7RYR/r_objects/plasmo_dds_raw.rds")
 
-
-# ---- Kegg ----
-#Extract signficant genes
-p_col   <- "padj" 
-p_cut   <- 0.05
-lfc_cut <- 1
-
-sigGenes_list <- purrr::imap(res_shrunk_list, function(df, contrast_name) {
-  
-  p_sym <- rlang::sym(p_col)
-  
-  df %>%
-    tidyr::drop_na(entrez_id, log2FoldChange, !!p_sym) %>%
-    dplyr::filter((!!p_sym) < p_cut, abs(log2FoldChange) > lfc_cut) %>%
-    dplyr::pull(entrez_id) %>%
-    unique()
-})
-
-keggRes_list <- purrr::imap(sigGenes_list, function(sigGenes, contrast_name) {
-  
-  if (length(sigGenes) == 0) return(NULL)
-  
-  clusterProfiler::enrichKEGG(
-    gene     = sigGenes,
-    organism = "hsa"
-  )
-})
-
-# Kegg table
-outdir  <- "data/R2SDHF/kegg"
-outfile <- file.path(outdir, "R2SDHF_kegg_results_noMAD.xlsx")
-
-dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
-
-wb <- openxlsx::createWorkbook()
-
-purrr::imap(keggRes_list, function(res, contrast_name) {
-  
-  if (is.null(res)) return(NULL)
-  
-  tbl <- tibble::as_tibble(res)
-  
-  sheet_name <- gsub("[^A-Za-z0-9]", "_", contrast_name)
-  sheet_name <- substr(sheet_name, 1, 31)  # Excel sheet name limit
-  
-  openxlsx::addWorksheet(wb, sheet_name)
-  openxlsx::writeData(wb, sheet_name, tbl)
-})
-
-openxlsx::saveWorkbook(wb, outfile, overwrite = TRUE)
-
-
-# ---- KEGG Pathview (ALS + Alzheimer) for each contrast ----
-p_col   <- "padj"   # "pvalue" or "padj"
-p_cut   <- 0.05
-lfc_cut <- 1
-
-pathways <- list(
-  als       = "hsa05014",
-  alzheimer = "hsa05010"
+coef_names <- DESeq2::resultsNames(dds)[-1]
+# Extract unshrunken results which contain the Wald statistic and p-values
+res_wald_list <- setNames(
+  lapply(coef_names, function(coef_name) {
+    DESeq2::results(dds, name = coef_name)
+  }),
+  coef_names
 )
 
-dir.create("figures/plasmo/pathways/als", recursive = TRUE, showWarnings = FALSE)
-dir.create("figures/plasmo/pathways/alzheimer", recursive = TRUE, showWarnings = FALSE)
+# liver Results
+res_shrunk_liver <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_liver_qcmin10_annotated.rds")
+res_wald_liver <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_liver_qcmin10_annotated.rds")
 
-for (contrast_name in names(res_shrunk_list)) {
-  
-  df <- res_shrunk_list[[contrast_name]]
-  
-  logFC <- df$log2FoldChange
-  names(logFC) <- df$entrez_id
-  logFC <- logFC[!is.na(names(logFC))]
-  logFC <- logFC[!is.na(logFC)]
-  
-  for (folder in names(pathways)) {
+# Spleen Results
+res_wald_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_spleen_qcmin10_annotated.rds")
+res_shrunk_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_spleen_qcmin10_annotated.rds")
+
+# =========================================
+# ---- DoRothEA: Transcription factors ----
+# =========================================
+
+# ---- Full Interactive model ----
+# Run decoupleR using gene symbols from the shrunk results
+tf_results_list <- setNames(
+  lapply(coef_names, function(coef_name) {
+    res <- res_wald_list[[coef_name]]
+    shrunk <- res_shrunk_list[[coef_name]]
     
-    pid <- pathways[[folder]]
+    stats <- res$stat
+    symbols <- shrunk$symbol
+    names(stats) <- symbols
     
-    safe_contrast <- gsub("[^A-Za-z0-9_]+", "_", contrast_name)
-    prefix <- paste0(
-      safe_contrast,
-      "__", p_col, "lt", p_cut,
-      "__lfcgt", lfc_cut,
-      "__", pid, "_"
+    valid <- !is.na(stats) & !is.na(symbols) & symbols != ""
+    stats <- stats[valid]
+    
+    stats <- tapply(stats, names(stats), function(x) x[which.max(abs(x))])
+    stats <- as.numeric(stats)
+    names(stats) <- names(tapply(res$stat[valid], symbols[valid], function(x) x[which.max(abs(x))]))
+    
+    # Genes as rows, contrast as column
+    stat_mat <- matrix(stats, ncol = 1, dimnames = list(names(stats), coef_name))
+    
+    run_ulm(
+      mat = stat_mat,
+      network = tfnet,
+      .source = source,
+      .target = target,
+      minsize = 5
     )
-    
-    outdir <- file.path("figures/plasmo/pathways", folder)
-    
-    withr::with_dir(outdir, {
-      pathview::pathview(
-        gene.data   = logFC,
-        pathway.id  = pid,
-        species     = "hsa",
-        limit       = list(gene = 3, cpd = 1),
-        out.suffix  = prefix,
-        kegg.native = TRUE
-      )
-    })
-  }
-}
-
-
-# ---- Top 5 pathways for each treatment ----
-
-base_outdir <- "figures/plasmo/pathways/top5_FE"
-dir.create(base_outdir, recursive = TRUE, showWarnings = FALSE)
-
-ratio_to_num <- function(x) {
-  parts <- strsplit(as.character(x), "/", fixed = TRUE)
-  vapply(parts, function(p) as.numeric(p[1]) / as.numeric(p[2]), numeric(1))
-}
-
-for (contrast_name in names(keggRes_list)) {
-  
-  keggRes <- keggRes_list[[contrast_name]]
-  if (is.null(keggRes)) next
-  
-  kegg_tbl <- tibble::as_tibble(keggRes)
-  
-  if (!all(c("ID", "GeneRatio", "BgRatio") %in% names(kegg_tbl))) next
-  
-  top5_ids <- kegg_tbl |>
-    dplyr::mutate(
-      FoldEnrichment = ratio_to_num(GeneRatio) / ratio_to_num(BgRatio)
-    ) |>
-    dplyr::arrange(dplyr::desc(FoldEnrichment)) |>
-    dplyr::slice_head(n = 5) |>
-    dplyr::pull(ID)
-  
-  df <- res_shrunk_list[[contrast_name]]
-  
-  logFC <- df$log2FoldChange
-  names(logFC) <- df$entrez_id
-  logFC <- logFC[!is.na(names(logFC))]
-  logFC <- logFC[!is.na(logFC)]
-  
-  contrast_dir <- file.path(base_outdir, gsub("[^A-Za-z0-9_]+", "_", contrast_name))
-  dir.create(contrast_dir, recursive = TRUE, showWarnings = FALSE)
-  
-  for (pid in top5_ids) {
-    
-    prefix <- paste0(
-      gsub("[^A-Za-z0-9_]+", "_", contrast_name),
-      "__top5FE__",
-      pid,
-      "_"
-    )
-    
-    withr::with_dir(contrast_dir, {
-      pathview::pathview(
-        gene.data   = logFC,
-        pathway.id  = pid,
-        species     = "hsa",
-        kegg.native = TRUE,
-        out.suffix  = prefix,
-        limit       = list(gene = 3, cpd = 1)
-      )
-    })
-  }
-}
-
-# ---- GSEA ----
-gmt_sym <- clusterProfiler::read.gmt(
-  "data/geneset/WP_AMYOTROPHIC_LATERAL_SCLEROSIS_ALS.v2026.1.Hs.gmt"
+  }),
+  coef_names
 )
 
-sym2ent <- AnnotationDbi::select(
-  org.Hs.eg.db,
-  keys    = unique(gmt_sym$gene),
-  keytype = "SYMBOL",
-  columns = "ENTREZID"
+#Save/load
+saveRDS(tf_results_list, "data/KG7RYR/r_objects/tf_results_list.rds")
+tf_results_list <- readRDS("data/KG7RYR/r_objects/tf_results_list.rds")
+
+tf_results_all <- do.call(rbind, tf_results_list)
+tf_consensus <- tf_results_all[tf_results_all$statistic == "consensus", ]
+
+#Graph
+
+lapply(coef_names, function(coef_name) {
+  tf <- tf_results_list[[coef_name]]
+  tf <- tf[order(abs(tf$score), decreasing = TRUE), ]
+  tf <- head(tf, 25)
+  tf$source <- reorder(tf$source, tf$score)
+  
+  ggplot(tf, aes(x = score, y = source, fill = score > 0)) +
+    geom_col() +
+    scale_fill_manual(values = c("TRUE" = "firebrick", "FALSE" = "steelblue"), guide = "none") +
+    labs(title = coef_name, x = "TF activity (ULM score)", y = NULL) +
+    theme_minimal()
+})
+
+# ---- DoRothEA - liver ----
+coef_names_liver <- names(res_wald_liver)
+
+tf_results_liver <- setNames(
+  lapply(coef_names_liver, function(coef_name) {
+    res <- res_wald_liver[[coef_name]]
+    
+    stats <- res$stat
+    symbols <- res$symbol
+    names(stats) <- symbols
+    
+    valid <- !is.na(stats) & !is.na(symbols) & symbols != ""
+    stats <- stats[valid]
+    
+    stats <- tapply(stats, names(stats), function(x) x[which.max(abs(x))])
+    stats <- as.numeric(stats)
+    names(stats) <- names(tapply(res$stat[valid], res$symbol[valid], function(x) x[which.max(abs(x))]))
+    
+    stat_mat <- matrix(stats, ncol = 1, dimnames = list(names(stats), coef_name))
+    
+    run_ulm(
+      mat = stat_mat,
+      network = tfnet,
+      .source = source,
+      .target = target,
+      minsize = 5
+    )
+  }),
+  coef_names_liver
+)
+#Save
+saveRDS(tf_results_liver, "data/KG7RYR/r_objects/tf_results_liver.rds")
+tf_results_liver <- readRDS("data/KG7RYR/r_objects/tf_results_liver.rds")
+
+
+lapply(names(tf_results_liver), function(coef_name) {
+  tf <- tf_results_liver[[coef_name]]
+  tf <- tf[order(abs(tf$score), decreasing = TRUE), ]
+  tf <- head(tf, 25)
+  tf$source <- reorder(tf$source, tf$score)
+  
+  ggplot(tf, aes(x = score, y = source, fill = score > 0)) +
+    geom_col() +
+    scale_fill_manual(values = c("TRUE" = "firebrick", "FALSE" = "steelblue"), guide = "none") +
+    labs(title = paste("liver -", coef_name), x = "TF activity (ULM score)", y = NULL) +
+    theme_minimal()
+})
+
+
+tf <- tf_results_liver[[3]]
+tf <- tf[order(abs(tf$score), decreasing = TRUE), ]
+tf <- head(tf, 25)
+print(tf[, c("source", "score", "p_value")], n = 25)
+# ---- TF Activity - Spleen ----
+coef_names_spleen <- names(res_wald_spleen)
+
+tf_results_spleen <- setNames(
+  lapply(coef_names_spleen, function(coef_name) {
+    res <- res_wald_spleen[[coef_name]]
+    
+    stats <- res$stat
+    symbols <- res$symbol
+    names(stats) <- symbols
+    
+    valid <- !is.na(stats) & !is.na(symbols) & symbols != ""
+    stats <- stats[valid]
+    
+    stats <- tapply(stats, names(stats), function(x) x[which.max(abs(x))])
+    stats <- as.numeric(stats)
+    names(stats) <- names(tapply(res$stat[valid], res$symbol[valid], function(x) x[which.max(abs(x))]))
+    
+    stat_mat <- matrix(stats, ncol = 1, dimnames = list(names(stats), coef_name))
+    
+    run_ulm(
+      mat = stat_mat,
+      network = tfnet,
+      .source = source,
+      .target = target,
+      minsize = 5
+    )
+  }),
+  coef_names_spleen
 )
 
-gmt_ent <- gmt_sym |>
-  dplyr::left_join(
-    tibble::as_tibble(sym2ent) |>
-      dplyr::rename(gene = SYMBOL, entrez_id = ENTREZID) |>
-      dplyr::filter(!is.na(entrez_id)) |>
-      dplyr::distinct(gene, .keep_all = TRUE),
-    by = "gene"
-  ) |>
-  dplyr::filter(!is.na(entrez_id)) |>
-  dplyr::transmute(term = term, gene = entrez_id)
+#
+saveRDS(tf_results_spleen, "data/KG7RYR/r_objects/tf_results_spleen.rds")
+tf_results_spleen <- readRDS("data/KG7RYR/r_objects/tf_results_spleen.rds")
 
-ranked_list <- purrr::map(res_shrunk_list, function(df) {
+lapply(names(tf_results_spleen), function(coef_name) {
+  tf <- tf_results_spleen[[coef_name]]
+  tf <- tf[order(abs(tf$score), decreasing = TRUE), ]
+  tf <- head(tf, 25)
+  tf$source <- reorder(tf$source, tf$score)
   
-  df2 <- df |>
-    dplyr::filter(!is.na(entrez_id), !is.na(log2FoldChange)) |>
-    dplyr::mutate(entrez_id = as.character(entrez_id)) |>
-    dplyr::arrange(dplyr::desc(abs(log2FoldChange))) |>
-    dplyr::distinct(entrez_id, .keep_all = TRUE)
-  
-  geneList <- df2$log2FoldChange
-  names(geneList) <- df2$entrez_id
-  
-  sort(geneList, decreasing = TRUE)
+  ggplot(tf, aes(x = score, y = source, fill = score > 0)) +
+    geom_col() +
+    scale_fill_manual(values = c("TRUE" = "firebrick", "FALSE" = "steelblue"), guide = "none") +
+    labs(title = paste("Spleen -", coef_name), x = "TF activity (ULM score)", y = NULL) +
+    theme_minimal()
 })
-
-gsea_results <- purrr::map(ranked_list, function(geneList) {
-  clusterProfiler::GSEA(
-    geneList     = geneList,
-    TERM2GENE    = gmt_ent,
-    pvalueCutoff = 1
-  )
-})
-
-gsea_tbl_list <- purrr::imap(gsea_results, function(res, contrast) {
-  tibble::as_tibble(res@result) |>
-    dplyr::mutate(contrast = contrast, .before = 1)
-})
-
-
-# ---- Table ----
-# Assumes you already have:
-# - res_shrunk_list (list of tibbles) with columns: entrez_id, log2FoldChange (or stat)
-# - gmt_ent (TERM2GENE tibble/data.frame with columns: term, gene [ENTREZ IDs as character])
-
-ranked_list <- purrr::map(res_shrunk_list, function(df) {
-  
-  df2 <- df |>
-    dplyr::filter(!is.na(entrez_id), !is.na(log2FoldChange)) |>
-    dplyr::mutate(entrez_id = as.character(entrez_id)) |>
-    dplyr::arrange(dplyr::desc(abs(log2FoldChange))) |>
-    dplyr::distinct(entrez_id, .keep_all = TRUE)
-  
-  geneList <- df2$log2FoldChange
-  names(geneList) <- df2$entrez_id
-  
-  sort(geneList, decreasing = TRUE)
-})
-
-gsea_results <- purrr::map(ranked_list, function(geneList) {
-  clusterProfiler::GSEA(
-    geneList = geneList,
-    TERM2GENE = gmt_ent,
-    pvalueCutoff = 1,
-    minGSSize = 1
-  )
-})
-
-gsea_tbl_all <- purrr::imap_dfr(gsea_results, function(res, contrast) {
-  
-  out <- tibble::as_tibble(res@result)
-  
-  if (nrow(out) == 0) {
-    return(tibble::tibble(
-      contrast = contrast,
-      term = NA_character_,
-      setSize = NA_integer_,
-      NES = NA_real_,
-      pvalue = NA_real_,
-      p.adjust = NA_real_
-    ))
-  }
-  
-  out |>
-    dplyr::transmute(
-      contrast = contrast,
-      term = ID,
-      setSize,
-      NES,
-      pvalue,
-      p.adjust
-    )
-})
-
-gsea_tbl_all
-
-
-write.table(
-  gsea_tbl_all,
-  file = "clipboard",
-  sep = "\t",
-  row.names = FALSE,
-  quote = FALSE
-)
-
-
-
-
-
-
-
-
-
-
-
-gsea_summary <- purrr::imap_dfr(gsea_results, function(res, contrast) {
-  
-  if (nrow(res@result) == 0) {
-    return(
-      tibble::tibble(
-        contrast = contrast,
-        NES = NA_real_,
-        pvalue = NA_real_,
-        p.adjust = NA_real_,
-        size = NA_integer_,
-        leading_edge = NA_character_
-      )
-    )
-  }
-  
-  tibble::as_tibble(res@result) |>
-    dplyr::transmute(
-      contrast = contrast,
-      NES,
-      pvalue,
-      p.adjust,
-      size,
-      leading_edge
-    )
-})
-
-gsea_summary <- gsea_summary |>
-  dplyr::mutate(
-    NES = round(NES, 3),
-    pvalue = signif(pvalue, 3),
-    p.adjust = signif(p.adjust, 3)
-  ) |>
-  dplyr::arrange(p.adjust)
