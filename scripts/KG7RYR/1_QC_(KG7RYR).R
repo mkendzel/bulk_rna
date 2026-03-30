@@ -230,80 +230,80 @@ res_shrunk_list <- readRDS("data/KG7RYR/Plasmo/plasmo_resShrink_qcmin10_annotate
 # ==================================
 # ---- Tissue-specific DESeq 2 analyses ----
 # ==================================
-# ---- Lung ----
+# ---- liver ----
 
-#Subset to lung
-lung_samples <- sample_info$tissue == "lung"
-counts_lung <- counts[, lung_samples]
-info_lung <- sample_info[lung_samples, ]
-info_lung$treatment <- relevel(droplevels(info_lung$treatment), ref = "control")
+#Subset to liver
+liver_samples <- sample_info$tissue == "liver"
+counts_liver <- counts[, liver_samples]
+info_liver <- sample_info[liver_samples, ]
+info_liver$treatment <- relevel(droplevels(info_liver$treatment), ref = "control")
 
 # DESEQ object creation
-dds_lung <- DESeqDataSetFromMatrix(
-  countData = round(as.matrix(counts_lung)),
-  colData = info_lung,
+dds_liver <- DESeqDataSetFromMatrix(
+  countData = round(as.matrix(counts_liver)),
+  colData = info_liver,
   design = ~ treatment
 )
 
 #Subset low expression genes out
-keep <- rowSums(DESeq2::counts(dds_lung) >= 10) >= 5
-dds_lung <- dds_lung[keep, ]
+keep <- rowSums(DESeq2::counts(dds_liver) >= 10) >= 5
+dds_liver <- dds_liver[keep, ]
 
 #variance stabilization of pca
-vsd_lung <- DESeq2::vst(dds_lung)
-DESeq2::plotPCA(vsd_lung, intgroup = "treatment")
+vsd_liver <- DESeq2::vst(dds_liver)
+DESeq2::plotPCA(vsd_liver, intgroup = "treatment")
 
 #run DESeq2
-dds_lung <- DESeq2::DESeq(dds_lung, minReplicatesForReplace = Inf)
+dds_liver <- DESeq2::DESeq(dds_liver, minReplicatesForReplace = Inf)
 
 # Shrink logfold2 estimations
-coef_names_lung <- DESeq2::resultsNames(dds_lung)[-1]
-res_shrunk_lung <- setNames(
-  lapply(coef_names_lung, function(coef_name) {
-    DESeq2::lfcShrink(dds_lung, coef = coef_name, type = "apeglm")
+coef_names_liver <- DESeq2::resultsNames(dds_liver)[-1]
+res_shrunk_liver <- setNames(
+  lapply(coef_names_liver, function(coef_name) {
+    DESeq2::lfcShrink(dds_liver, coef = coef_name, type = "apeglm")
   }),
-  coef_names_lung
+  coef_names_liver
 )
 
 #Add all comps to results
-res_wald_lung <- setNames(
-  lapply(coef_names_lung, function(coef_name) {
-    DESeq2::results(dds_lung, name = coef_name)
+res_wald_liver <- setNames(
+  lapply(coef_names_liver, function(coef_name) {
+    DESeq2::results(dds_liver, name = coef_name)
   }),
-  coef_names_lung
+  coef_names_liver
 )
-res_wald_lung[["treatment_cl_vs_d"]] <- DESeq2::results(dds_lung, contrast = c("treatment", "cl", "d"))
+res_wald_liver[["treatment_cl_vs_d"]] <- DESeq2::results(dds_liver, contrast = c("treatment", "cl", "d"))
 
-res_lung <- DESeq2::results(dds_lung)
-DESeq2::plotMA(res_lung, ylim = c(-5, 5))
+res_liver <- DESeq2::results(dds_liver)
+DESeq2::plotMA(res_liver, ylim = c(-5, 5))
 
 #Save/load DESeq object
-saveRDS(dds_lung, "data/KG7RYR/r_objects/plasmo_dds_lung_raw.rds")
-dds_lung <- readRDS("data/KG7RYR/r_objects/plasmo_dds_lung_raw.rds")
+saveRDS(dds_liver, "data/KG7RYR/r_objects/plasmo_dds_liver_raw.rds")
+dds_liver <- readRDS("data/KG7RYR/r_objects/plasmo_dds_liver_raw.rds")
 
-saveRDS(counts(dds_lung, normalized = TRUE), "data/KG7RYR/r_objects/plasmo_counts_lung_normalized.rds")
-normalized_counts_lung <- readRDS("data/KG7RYR/r_objects/plasmo_counts_lung_normalized.rds")
+saveRDS(counts(dds_liver, normalized = TRUE), "data/KG7RYR/r_objects/plasmo_counts_liver_normalized.rds")
+normalized_counts_liver <- readRDS("data/KG7RYR/r_objects/plasmo_counts_liver_normalized.rds")
 
-saveRDS(res_shrunk_lung, "data/KG7RYR/r_objects/plasmo_resShrink_lung_qcmin10.rds")
-res_shrunk_lung <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_lung_qcmin10.rds")
+saveRDS(res_shrunk_liver, "data/KG7RYR/r_objects/plasmo_resShrink_liver_qcmin10.rds")
+res_shrunk_liver <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_liver_qcmin10.rds")
 
-saveRDS(res_wald_lung, "data/KG7RYR/r_objects/plasmo_resWald_lung_qcmin10.rds")
-res_wald_lung <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_lung_qcmin10.rds")
+saveRDS(res_wald_liver, "data/KG7RYR/r_objects/plasmo_resWald_liver_qcmin10.rds")
+res_wald_liver <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_liver_qcmin10.rds")
 
 # Annotated object
-all_ensembl_lung <- res_shrunk_lung |>
+all_ensembl_liver <- res_shrunk_liver |>
   purrr::map(~ rownames(.x)) |>
   unlist(use.names = FALSE) |>
   unique() |>
   as.character()
 
-gene_map_lung <- AnnotationDbi::select(
+gene_map_liver <- AnnotationDbi::select(
   org.Mm.eg.db,
-  keys    = all_ensembl_lung,
+  keys    = all_ensembl_liver,
   keytype = "ENSEMBL",
   columns = c("ENTREZID", "SYMBOL")
 )
-gene_map_lung <- gene_map_lung |>
+gene_map_liver <- gene_map_liver |>
   as_tibble() |>
   distinct(ENSEMBL, .keep_all = TRUE) |>
   dplyr::rename(
@@ -312,34 +312,34 @@ gene_map_lung <- gene_map_lung |>
     symbol     = SYMBOL
   )
 
-res_shrunk_lung <- purrr::map(res_shrunk_lung, function(df) {
+res_shrunk_liver <- purrr::map(res_shrunk_liver, function(df) {
   df |>
     as.data.frame() |>
     rownames_to_column("ensembl_id") |>
     mutate(ensembl_id = sub("\\..*$", "", ensembl_id)) |>
-    left_join(gene_map_lung, by = "ensembl_id") |>
+    left_join(gene_map_liver, by = "ensembl_id") |>
     as_tibble()
 })
 
-res_wald_lung <- purrr::map(res_wald_lung, function(df) {
+res_wald_liver <- purrr::map(res_wald_liver, function(df) {
   df |>
     as.data.frame() |>
     rownames_to_column("ensembl_id") |>
     mutate(ensembl_id = sub("\\..*$", "", ensembl_id)) |>
-    left_join(gene_map_lung, by = "ensembl_id") |>
+    left_join(gene_map_liver, by = "ensembl_id") |>
     as_tibble()
 })
 
 # Save Annotated
-saveRDS(res_shrunk_lung, "data/KG7RYR/r_objects/plasmo_resShrink_lung_qcmin10_annotated.rds")
-saveRDS(res_wald_lung, "data/KG7RYR/r_objects/plasmo_resWald_lung_qcmin10_annotated.rds")
+saveRDS(res_shrunk_liver, "data/KG7RYR/r_objects/plasmo_resShrink_liver_qcmin10_annotated.rds")
+saveRDS(res_wald_liver, "data/KG7RYR/r_objects/plasmo_resWald_liver_qcmin10_annotated.rds")
 
-res_shrunk_lung <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_lung_qcmin10_annotated.rds")
-res_wald_lung <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_lung_qcmin10_annotated.rds")
+res_shrunk_liver <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_liver_qcmin10_annotated.rds")
+res_wald_liver <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_liver_qcmin10_annotated.rds")
 
 # Tissue check
 
-vsd_liver <- assay(vst(dds_lung, blind = TRUE))
+vsd_liver <- assay(vst(dds_liver, blind = TRUE))
 
 results_list_liver <- list()
 for (s in colnames(vsd_liver)) {
@@ -501,16 +501,3 @@ for (s in names(results_list_spleen)) {
       "(", res$Tissue.Specific.Genes[top_idx], "genes, p =", 
       10^(-res$Log10PValue[top_idx]), ")\n")
 }
-
-
-
-
-
-
-
-
-# =========================
-# ---- Tissue Check ----
-# ========================
-
-# Tissue Chec
