@@ -186,3 +186,29 @@ lapply(names(tf_results_spleen), function(coef_name) {
     labs(title = paste("Spleen -", coef_name), x = "TF activity (ULM score)", y = NULL) +
     theme_minimal()
 })
+
+# ---- Save all TF results as excel ----
+library(openxlsx)
+
+# Define tissues and their corresponding list objects
+tissues <- list(
+  liver = tf_results_liver,
+  spleen = tf_results_spleen
+)
+
+# Define the comparisons and their clean names
+comparisons <- c(
+  "treatment_cl_vs_control" = "CL",
+  "treatment_d_vs_control" = "DOPC"
+)
+
+# Adjust p-values, filter for significance, and write to Excel
+for (tissue in names(tissues)) {
+  for (comp in names(comparisons)) {
+    df <- tissues[[tissue]][[comp]]
+    df$padj <- p.adjust(df$p_value, method = "BH")
+    sig <- df[df$padj < 0.05 & !is.na(df$padj), ]
+    filename <- file.path("data", "KG7RYR", paste0(tissue, "_", comparisons[comp], ".xlsx"))
+    write.xlsx(sig, file = filename)
+  }
+}
