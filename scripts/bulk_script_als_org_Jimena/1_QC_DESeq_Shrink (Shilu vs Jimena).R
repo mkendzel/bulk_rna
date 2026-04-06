@@ -64,7 +64,30 @@ rename_map_R2SDHF <- c(
 colnames(counts_R2SDHF) <- rename_map_R2SDHF[colnames(counts_R2SDHF)]
 
 counts_R2SDHF <- counts_R2SDHF[, !grepl("^MAD_", colnames(counts_R2SDHF))]
+counts_R2SDHF <- counts_R2SDHF[, !grepl("^ROV_", colnames(counts_R2SDHF))]
 
+# Convert Ensembl IDs to gene symbols
+gene_map <- mapIds(org.Hs.eg.db,
+                   keys = rownames(counts_R2SDHF),
+                   keytype = "ENSEMBL",
+                   column = "SYMBOL",
+                   multiVals = "first")
+
+cat("Unmapped:", sum(is.na(gene_map)), "\n")
+cat("Duplicate symbols:", sum(duplicated(gene_map[!is.na(gene_map)])), "\n")
+
+# Keep highest-expressed Ensembl ID per symbol
+mapped <- data.frame(
+  ensembl = names(gene_map),
+  symbol = gene_map,
+  mean_expr = rowMeans(counts_R2SDHF)
+) %>%
+  filter(!is.na(symbol)) %>%
+  arrange(symbol, desc(mean_expr)) %>%
+  filter(!duplicated(symbol))
+
+counts_R2SDHF <- counts_R2SDHF[mapped$ensembl, ]
+rownames(counts_R2SDHF) <- mapped$symbol
 
 # Build metadata
 meta_R2SDHF <- data.frame(
@@ -74,6 +97,10 @@ meta_R2SDHF <- data.frame(
   rep = gsub("^.*_(\\d+)$", "\\1", colnames(counts_R2SDHF))
 )
 rownames(meta_R2SDHF) <- meta_R2SDHF$sample
+
+meta_R2SDHF$treatment <- factor(meta_R2SDHF$treatment, levels = c("Mock", "TX"))
+meta_R2SDHF$time <- factor(meta_R2SDHF$time)
+meta_R2SDHF$Group <- factor(paste0(meta_R2SDHF$treatment, "_", meta_R2SDHF$time))
 
 # Combined condition with Mock_0 as reference
 meta_R2SDHF$condition <- ifelse(meta_R2SDHF$treatment == "Mock", "Mock_0",
@@ -112,6 +139,81 @@ rownames(v_R2SDHF_sym) <- mapped
 saveRDS(v_R2SDHF_sym, "data/Anderson-Suthar_collab/Als_org_Jimena/R2SDHF.rds")
 v_R2SDHF_sym <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/R2SDHF.rds")
 
+# ---- R2SDHF LIMMA voom analysis ----
+design <- model.matrix(~ 0 + Group, data = meta_R2SDHF)
+colnames(design) <- levels(meta_R2SDHF$Group)
+
+#DGE list
+dge <- DGEList(counts = counts_R2SDHF)
+keep <- filterByExpr(dge, design)
+dge <- dge[keep, , keep.lib.sizes = FALSE]
+dge <- calcNormFactors(dge)
+# Voom normalization (no blocking needed)
+v <- voom(dge, design)
+
+# Fit
+fit <- lmFit(v, design)
+
+# Define contrasts of interest
+contr <- makeContrasts(
+  TX12_vs_Mock = TX_12 - Mock_0,
+  TX24_vs_Mock = TX_24 - Mock_0,
+  TX48_vs_Mock = TX_48 - Mock_0,
+  TX48_vs_TX12 = TX_48 - TX_12,
+  levels = design
+)
+
+fit2 <- contrasts.fit(fit, contr)
+fit2 <- eBayes(fit2)
+
+# Results for one contrast at a time
+res_TX12 <- topTable(fit2, coef = "TX12_vs_Mock", number = Inf)
+res_TX24 <- topTable(fit2, coef = "TX24_vs_Mock", number = Inf)
+res_TX48 <- topTable(fit2, coef = "TX48_vs_Mock", number = Inf)
+res_TX48_vs_TX12 <- topTable(fit2, coef = "TX48_vs_TX12", number = Inf)
+
+saveRDS(fit2, "data/Anderson-Suthar_collab/Als_org_Jimena/fit2(R2SDHF).rds")
+saveRDS(v, "data/Anderson-Suthar_collab/Als_org_Jimena/voom(R2SDHF).rds")
+saveRDS(res_TX12, "data/Anderson-Suthar_collab/r_objects/res_TX12(R2SDHF).rds")
+saveRDS(res_TX24, "data/Anderson-Suthar_collab/r_objects/res_TX24(R2SDHF).rds")
+saveRDS(res_TX48, "data/Anderson-Suthar_collab/r_objects/res_TX48(R2SDHF).rds")
+saveRDS(res_TX48_vs_TX12, "data/Anderson-Suthar_collab/r_objects/res_TX48_vs_TX12(R2SDHF).rds")
+
+# ---- FgSEA for R2SDHF ----
+library(fgsea)
+library(msigdbr)
+
+# Get gene sets (example: Hallmark, human)
+gmt_path <- "data/geneset/h.all.v2025.1.Hs.symbols.gmt"
+pathways <- gmtPathways(gmt_path)
+
+
+# Helper to build ranked list and run fgsea
+run_gsea <- function(tt, pathways, nPermSimple = 10000) {
+  # Resolve duplicates by keeping the entry with highest average expression
+  n_before <- nrow(tt)
+  tt <- tt[order(-tt$AveExpr), ]
+  tt <- tt[!duplicated(rownames(tt)), ]
+  n_dupes <- n_before - nrow(tt)
+  message("Removed ", n_dupes, " duplicate gene names (kept highest AveExpr)")
+  
+  ranks <- setNames(tt$t, rownames(tt))
+  ranks <- sort(ranks, decreasing = TRUE)
+  
+  res <- fgsea(pathways = pathways, stats = ranks, nPermSimple = nPermSimple)
+  res <- res[order(res$pval), ]
+  return(res)
+}
+
+fgsea_TX12 <- run_gsea(res_TX12, pathways)
+fgsea_TX24 <- run_gsea(res_TX24, pathways)
+fgsea_TX48 <- run_gsea(res_TX48, pathways)
+fgsea_TX48_vs_TX12 <- run_gsea(res_TX48_vs_TX12, pathways)
+
+saveRDS(fgsea_TX12, "data/Anderson-Suthar_collab/r_objects/fgsea_TX12_vs_Mock(R2SDHF).rds")
+saveRDS(fgsea_TX24, "data/Anderson-Suthar_collab/r_objects/fgsea_TX24_vs_Mock(R2SDHF).rds")
+saveRDS(fgsea_TX48, "data/Anderson-Suthar_collab/r_objects/fgsea_TX48_vs_Mock(R2SDHF).rds")
+saveRDS(fgsea_TX48_vs_TX12, "data/Anderson-Suthar_collab/r_objects/fgsea_TX48_vs_TX12(R2SDHF).rds")
 # ---- Jimina's data ----
 #### Expression matrix
 # Define base path
@@ -145,8 +247,7 @@ metadata <- as.data.frame(metadata)
 # Filter metadata for hSPS organoids with Ctrx coating
 meta_filtered <- metadata %>%
   filter(Organoid == "hSpS", Coating == "Ctrx", Line %in% c("ALS", "control")) %>%
-  dplyr::select(Admera_Health_ID, Patient, AgeOrg, Line, Replicate, Sex)
-
+  dplyr::select(Admera_Health_ID, Patient, AgeOrg, Line, Replicate, Sex, Batch = d0)
 meta_filtered %>%
   group_by(AgeOrg, Sex, Line) %>%
   summarise(
@@ -159,14 +260,13 @@ meta_filtered$Line <- relevel(meta_filtered$Line, ref = "control")
 meta_filtered$AgeOrg <- as.factor(meta_filtered$AgeOrg)
 meta_filtered$Patient <- as.factor(meta_filtered$Patient)
 meta_filtered$Sex <- as.factor(meta_filtered$Sex)
-
+meta_filtered$Batch <- as.factor(meta_filtered$Batch)
 meta_filtered$Stage <- case_when(
   meta_filtered$AgeOrg %in% c(30,31,34,35) ~ "d30",
   meta_filtered$AgeOrg %in% c(50,52) ~ "d50",
   meta_filtered$AgeOrg %in% c(75,76,77) ~ "d75",
   meta_filtered$AgeOrg == 120 ~ "d120"
 )
-
 meta_filtered$Stage <- factor(meta_filtered$Stage, levels = c("d30", "d50", "d75", "d120"))
 
 #Count matrix
@@ -200,11 +300,11 @@ list(
 )
 
 #Save/load checkpoint
-saveRDS(counts, "data/Anderson-Suthar_collab/Als_org_Jimena/counts(hSpS_Ctrx).rds")
-counts <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/counts(hSpS_Ctrx).rds")
+saveRDS(counts, "data/Anderson-Suthar_collab/Als_org_Jimena/counts(hSpS_Ctrx_batch).rds")
+counts <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/counts(hSpS_Ctrx_batch).rds")
 
-saveRDS(meta_filtered, "data/Anderson-Suthar_collab/Als_org_Jimena/meta_filtered(hSpS_Ctrx).rds")
-meta_filtered <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/meta_filtered(hSpS_Ctrx).rds")
+saveRDS(meta_filtered, "data/Anderson-Suthar_collab/Als_org_Jimena/meta_filtered(hSpS_Ctrx_batch).rds")
+meta_filtered <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/meta_filtered(hSpS_Ctrx_batch).rds")
 
 table(meta_filtered$Stage, meta_filtered$Line)
 # ---- limma and edgeR set up ----
@@ -219,7 +319,7 @@ dge <- dge[keep, , keep.lib.sizes = FALSE]
 dge <- calcNormFactors(dge)
 
 # Set up design matrix
-design <- model.matrix(~ Sex + Stage * Line, data = meta_filtered)
+design <- model.matrix(~ Sex + Batch + Stage * Line, data = meta_filtered)
 colnames(design) <- make.names(colnames(design))
 
 # Voom + duplicateCorrelation (twice)
@@ -253,6 +353,92 @@ res_d30 <- topTable(fit2, coef = "d30_ALS", number = Inf)
 res_d50 <- topTable(fit2, coef = "d50_ALS", number = Inf)
 res_d75 <- topTable(fit2, coef = "d75_ALS", number = Inf)
 res_d120 <- topTable(fit2, coef = "d120_ALS", number = Inf)
+
+# Save DE results
+saveRDS(fit2, "data/Anderson-Suthar_collab/Als_org_Jimena/fit2(hSpS_Ctrx_batch).rds")
+saveRDS(v, "data/Anderson-Suthar_collab/Als_org_Jimena/voom(hSpS_Ctrx_batch).rds")
+saveRDS(res_d30, "data/Anderson-Suthar_collab/r_objects/res_d30_ALS_vs_Ctrl(Batch).rds")
+saveRDS(res_d50, "data/Anderson-Suthar_collab/r_objects/res_d50_ALS_vs_Ctrl(Batch).rds")
+saveRDS(res_d75, "data/Anderson-Suthar_collab/r_objects/res_d75_ALS_vs_Ctrl(Batch).rds")
+saveRDS(res_d120, "data/Anderson-Suthar_collab/r_objects/res_d120_ALS_vs_Ctrl(Batch).rds")
+
+
+# ---- GSEA ----
+library(fgsea)
+library(msigdbr)
+
+# Get gene sets (example: Hallmark, human)
+gmt_path <- "data/geneset/h.all.v2025.1.Hs.symbols.gmt"
+pathways <- gmtPathways(gmt_path)
+
+
+# Helper to build ranked list and run fgsea
+run_gsea <- function(tt, pathways, nPermSimple = 10000) {
+  # Resolve duplicates by keeping the entry with highest average expression
+  n_before <- nrow(tt)
+  tt <- tt[order(-tt$AveExpr), ]
+  tt <- tt[!duplicated(rownames(tt)), ]
+  n_dupes <- n_before - nrow(tt)
+  message("Removed ", n_dupes, " duplicate gene names (kept highest AveExpr)")
+  
+  ranks <- setNames(tt$t, rownames(tt))
+  ranks <- sort(ranks, decreasing = TRUE)
+  
+  res <- fgsea(pathways = pathways, stats = ranks, nPermSimple = nPermSimple)
+  res <- res[order(res$pval), ]
+  return(res)
+}
+
+# Run for each timepoint
+gsea_d30  <- run_gsea(res_d30, pathways)
+gsea_d50  <- run_gsea(res_d50, pathways)
+gsea_d75  <- run_gsea(res_d75, pathways)
+gsea_d120 <- run_gsea(res_d120, pathways)
+
+saveRDS(gsea_d30,  "data/Anderson-Suthar_collab/r_objects/fgsea_d30_ALS_vs_Ctrl(Batch).rds")
+saveRDS(gsea_d50,  "data/Anderson-Suthar_collab/r_objects/fgsea_d50_ALS_vs_Ctrl(Batch).rds")
+saveRDS(gsea_d75,  "data/Anderson-Suthar_collab/r_objects/fgsea_d75_ALS_vs_Ctrl(Batch).rds")
+saveRDS(gsea_d120, "data/Anderson-Suthar_collab/r_objects/fgsea_d120_ALS_vs_Ctrl(Batch).rds")
+# ---- GSEA networks ----
+library(clusterProfiler)
+library(enrichplot)
+library(msigdbr)
+library(org.Hs.eg.db)
+
+# Get Hallmark gene sets formatted for clusterProfiler
+gmt_path <- "data/geneset/h.all.v2025.1.Hs.symbols.gmt"
+pathways <- gmtPathways(gmt_path)
+
+# Convert gmt pathways to t2g format
+msig_t2g <- data.frame(
+  gs_name = rep(names(pathways), lengths(pathways)),
+  gene_symbol = unlist(pathways)
+)
+
+# Helper to build ranked list from topTable results
+make_ranks <- function(tt) {
+  ranks <- setNames(tt$t, rownames(tt))
+  ranks <- sort(ranks, decreasing = TRUE)
+  ranks <- ranks[!duplicated(names(ranks))]
+  return(ranks)
+}
+
+# Run clusterProfiler GSEA for each timepoint
+run_cp_gsea <- function(tt, t2g) {
+  ranks <- make_ranks(tt)
+  GSEA(geneList = ranks, TERM2GENE = t2g, pvalueCutoff = 1, eps = 0)
+}
+
+cp_d30  <- run_cp_gsea(res_d30, msig_t2g)
+cp_d50  <- run_cp_gsea(res_d50, msig_t2g)
+cp_d75  <- run_cp_gsea(res_d75, msig_t2g)
+cp_d120 <- run_cp_gsea(res_d120, msig_t2g)
+
+#Save
+saveRDS(cp_d30,  "data/Anderson-Suthar_collab/r_objects/cp_gsea_d30_ALS_vs_Ctrl(Batch).rds")
+saveRDS(cp_d50,  "data/Anderson-Suthar_collab/r_objects/cp_gsea_d50_ALS_vs_Ctrl(Batch).rds")
+saveRDS(cp_d75,  "data/Anderson-Suthar_collab/r_objects/cp_gsea_d75_ALS_vs_Ctrl(Batch).rds")
+saveRDS(cp_d120, "data/Anderson-Suthar_collab/r_objects/cp_gsea_d120_ALS_vs_Ctrl(Batch).rds")
 
 # ---- graph Results ----
 library(UpSetR)
