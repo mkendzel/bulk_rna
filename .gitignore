@@ -4,7 +4,17 @@
 .Ruserdata
 
 #Ignored
-data
 old_code
 figures
 .obsidian
+omnipathr-log
+
+# Ignore all data
+data/*
+!data/README.md
+!data/Anderson-Suthar_collab/
+data/Anderson-Suthar_collab/*
+!data/Anderson-Suthar_collab/README.md
+!data/Anderson-Suthar_collab/r_objects/
+data/Anderson-Suthar_collab/r_objects/*
+!data/Anderson-Suthar_collab/r_objects/README.md
