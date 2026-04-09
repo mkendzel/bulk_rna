@@ -196,17 +196,10 @@ DESeq2::plotPCA(vsd_liver, intgroup = "treatment")
 # run DESeq2
 dds_liver <- DESeq2::DESeq(dds_liver, minReplicatesForReplace = Inf)
 
+#Grab coefficient names (except intercept)
 coef_names_liver <- DESeq2::resultsNames(dds_liver)[-1]
 
-# apeglm shrinkage for coefficient-based comparisons
-res_shrunk_liver <- setNames(
-  lapply(coef_names_liver, function(coef_name) {
-    DESeq2::lfcShrink(dds_liver, coef = coef_name, type = "apeglm")
-  }),
-  coef_names_liver
-)
-
-# wald test results with independent filtering disabled -- filterByExpr handles pre-filtering
+# Wald test stat results (full comp)
 res_wald_liver <- setNames(
   lapply(coef_names_liver, function(coef_name) {
     DESeq2::results(dds_liver, name = coef_name, independentFiltering = FALSE)
@@ -214,35 +207,37 @@ res_wald_liver <- setNames(
   coef_names_liver
 )
 
-# contrast-based comparison not captured by resultsNames
+
+# Add the specific contrast that DESeq2 doesn't automatically calculate (cl vs dopc)
 res_wald_liver[["treatment_cl_vs_dopc"]] <- DESeq2::results(
   dds_liver,
   contrast = c("treatment", "cl", "dopc"),
   independentFiltering = FALSE
 )
 
-# ashr shrinkage for contrast-based comparison (apeglm requires coef, not contrast)
+# Shrink coefficients using apeglm for all comparisons
+res_shrunk_liver <- setNames(
+  lapply(coef_names_liver, function(coef_name) {
+    DESeq2::lfcShrink(dds_liver, coef = coef_name, type = "apeglm")
+  }),
+  coef_names_liver
+)
+
+# Shrink the specific contrast that DESeq2 doesn't automatically calculate (cl vs dopc) using ashr
 res_shrunk_liver[["treatment_cl_vs_dopc"]] <- DESeq2::lfcShrink(
   dds_liver,
-  contrast = c("treatment", "cl", "dopc"),
+  res  = res_wald_liver[["treatment_cl_vs_dopc"]],
   type = "ashr"
 )
 
-res_liver <- DESeq2::results(dds_liver)
-DESeq2::plotMA(res_liver, ylim = c(-5, 5))
+
 
 #Save/load DESeq object
-saveRDS(dds_liver, "data/LSS7T8/r_objects/plasmo_dds_liver_raw.rds")
-dds_liver <- readRDS("data/LSS7T8/r_objects/plasmo_dds_liver_raw.rds")
+saveRDS(dds_liver,"data/LSS7T8/r_objects/dds_liver.rds")
+saveRDS(DESeq2::counts(dds_liver, normalized = TRUE), "data/LSS7T8/r_objects/norm_counts_liver.rds")
+saveRDS(res_wald_liver, "data/LSS7T8/r_objects/res_wald_liver.rds")
+saveRDS(res_shrunk_liver, "data/LSS7T8/r_objects/res_shrunk_liver.rds")
 
-saveRDS(counts(dds_liver, normalized = TRUE), "data/LSS7T8/r_objects/plasmo_counts_liver_normalized.rds")
-normalized_counts_liver <- readRDS("data/LSS7T8/r_objects/plasmo_counts_liver_normalized.rds")
-
-saveRDS(res_shrunk_liver, "data/LSS7T8/r_objects/plasmo_resShrink_liver_qcmin10.rds")
-res_shrunk_liver <- readRDS("data/LSS7T8/r_objects/plasmo_resShrink_liver_qcmin10.rds")
-
-saveRDS(res_wald_liver, "data/LSS7T8/r_objects/plasmo_resWald_liver_qcmin10.rds")
-res_wald_liver <- readRDS("data/LSS7T8/r_objects/plasmo_resWald_liver_qcmin10.rds")
 
 # Annotated object
 all_ensembl_liver <- res_shrunk_liver |>
