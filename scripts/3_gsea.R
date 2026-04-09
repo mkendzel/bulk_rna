@@ -137,7 +137,7 @@ x_levels <- df_plot %>%
 
 df_plot$treat <- factor(df_plot$treat, levels = x_levels)
 
-# Order y-axis by mean NES (same idea as your old code)
+# Order y-axis by mean NES
 df_plot$pathway <- with(df_plot, reorder(pathway, NES, mean))
 
 # Bubble plot
