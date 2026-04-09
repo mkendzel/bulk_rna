@@ -1,3 +1,30 @@
+# ---- Jimena DE list ----
+library(openxlsx)
+res_d30 <- readRDS("data/Anderson-Suthar_collab/r_objects/res_d30_ALS_vs_Ctrl(Batch).rds")
+res_d50 <- readRDS("data/Anderson-Suthar_collab/r_objects/res_d50_ALS_vs_Ctrl(Batch).rds")
+res_d75 <- readRDS("data/Anderson-Suthar_collab/r_objects/res_d75_ALS_vs_Ctrl(Batch).rds")
+res_d120 <- readRDS("data/Anderson-Suthar_collab/r_objects/res_d120_ALS_vs_Ctrl(Batch).rds")
+
+sig_d30 <- res_d30[res_d30$adj.P.Val < 0.05 & abs(res_d30$logFC) > 1, ]
+sig_d50 <- res_d50[res_d50$adj.P.Val < 0.05 & abs(res_d50$logFC) > 1, ]
+sig_d75 <- res_d75[res_d75$adj.P.Val < 0.05 & abs(res_d75$logFC) > 1, ]
+sig_d120 <- res_d120[res_d120$adj.P.Val < 0.05 & abs(res_d120$logFC) > 1, ]
+
+
+
+stages <- list(d30 = list(full = res_d30, sig = sig_d30),
+               d50 = list(full = res_d50, sig = sig_d50),
+               d75 = list(full = res_d75, sig = sig_d75),
+               d120 = list(full = res_d120, sig = sig_d120))
+
+lapply(names(stages), function(s) {
+  wb <- createWorkbook()
+  addWorksheet(wb, "Full DE list")
+  writeData(wb, "Full DE list", stages[[s]]$full, rowNames = TRUE)
+  addWorksheet(wb, "p<0.05 & logFC >1")
+  writeData(wb, "p<0.05 & logFC >1", stages[[s]]$sig, rowNames = TRUE)
+  saveWorkbook(wb, sprintf("data/Anderson-Suthar_collab/DE_%s_ALS_vs_Ctrl.xlsx", s), overwrite = TRUE)
+})
 # ---- GSEA graphs ----
 library(ggplot2)
 library(dplyr)
@@ -950,7 +977,7 @@ p2 <- ggplot(volcano_df, aes(x = FC, y = log10_p)) +
     plot.title = element_text(face = "bold", size = 12),
     panel.grid.minor = element_blank()
   )
-
+p2
 # Combine panels side by side
 combined <- p1 + p2 +
   plot_layout(widths = c(1, 1.5)) +
@@ -960,6 +987,233 @@ combined
 ggsave("figures/Shilu's vs Jimena/d120_volcano.pdf", p2, width = 7, height = 5, dpi = 300)
 ####
 
+
+# ---- Generalizable GSEA and Volcano (R2SDHF vs c9) ----
+# -- User parameter
+contrast      <- "TX48"
+pathway_regex <- "INNATE_IMMUN|INFLAMMATORY_RESPONSE|INTERFERON"
+nes_cutoff    <- 1.5
+pval_cutoff   <- 0.05
+b_title       <- "C9orf72 Innate Immunity Genes in WNV Infection"
+
+# ALS experiment parameters for sourcing the gene list
+als_day       <- "d120"
+als_comparison <- "ALS_vs_Ctrl(Batch)"
+
+# -- Load data 
+base_dir     <- "data/Anderson-Suthar_collab/r_objects"
+gsea_results <- readRDS(file.path(base_dir, paste0("fgsea_", contrast, "_vs_Mock(R2SDHF).rds")))
+res_results  <- readRDS(file.path(base_dir, paste0("res_", contrast, "(R2SDHF).rds")))
+
+# Load ALS day 120 GSEA results for leading-edge gene list
+gsea_als <- readRDS(file.path(base_dir, "fgsea_d120_ALS_vs_Ctrl(Batch).rds"))
+
+time_display <- paste0(str_extract(contrast, "\\d+"), "h post Infection")
+
+# Filter to significant pathways and clean names for display
+sig_paths <- gsea_results %>%
+  filter(abs(NES) > nes_cutoff, pval < pval_cutoff) %>%
+  mutate(
+    pathway_clean = str_remove(pathway, "^HALLMARK_") %>%
+      str_replace_all("_", " ") %>%
+      str_to_title(),
+    direction = ifelse(NES > 0, "Enriched", "Suppressed"),
+    neg_log10_padj = -log10(padj)
+  ) %>%
+  arrange(NES)
+
+sig_paths$pathway_clean <- factor(sig_paths$pathway_clean, levels = sig_paths$pathway_clean)
+
+# Lollipop bubble plot of significant hallmark pathways
+p1 <- ggplot(sig_paths, aes(x = NES, y = pathway_clean)) +
+  geom_segment(aes(x = 0, xend = NES, y = pathway_clean, yend = pathway_clean),
+               color = "grey60", linewidth = 0.4) +
+  geom_point(aes(size = neg_log10_padj, fill = direction), shape = 21, stroke = 0.3) +
+  scale_fill_manual(values = c("Enriched" = "#D73027", "Suppressed" = "#4575B4")) +
+  scale_size_continuous(range = c(2, 7), name = "-log10(p-value)") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  labs(x = "Normalized Enrichment Score (NES)", y = NULL, fill = "Direction",
+       title = paste0("WNV vs. Mock (", time_display, ")")) +
+  theme_minimal(base_size = 11) +
+  theme(panel.grid.major.y = element_blank(), legend.position = "right",
+        plot.title = element_text(face = "bold", size = 12))
+
+# Pull leading-edge genes from the ALS GSEA matching the target regex
+target_paths <- gsea_als %>%
+  filter(str_detect(pathway, regex(pathway_regex, ignore_case = TRUE)))
+target_genes <- unique(unlist(target_paths$leadingEdge))
+
+# Build volcano data frame with fold change and target gene flags
+volcano_df <- res_results %>%
+  as.data.frame() %>%
+  rownames_to_column("gene") %>%
+  mutate(
+    FC = 2^logFC,
+    log10_p = log10(P.Value),
+    is_target = gene %in% target_genes,
+    target_direction = case_when(
+      is_target & logFC > 0 ~ "Up",
+      is_target & logFC < 0 ~ "Down",
+      TRUE ~ NA_character_
+    )
+  )
+
+# Set y-axis floor based on the least significant target gene
+target_min_p <- volcano_df %>%
+  filter(is_target) %>%
+  pull(log10_p) %>%
+  min(na.rm = TRUE)
+y_floor <- target_min_p * 1.2
+
+# Volcano plot highlighting leading-edge genes from the ALS experiment
+p2 <- ggplot(volcano_df, aes(x = FC, y = log10_p)) +
+  geom_point(data = filter(volcano_df, !is_target),
+             color = "grey70", size = 0.6, alpha = 0.4) +
+  geom_point(data = filter(volcano_df, is_target),
+             aes(color = target_direction), size = 1.8, alpha = 0.9) +
+  geom_text_repel(data = filter(volcano_df, is_target),
+                  aes(label = gene), size = 2.8, fontface = "italic",
+                  max.overlaps = 15, segment.size = 0.3,
+                  min.segment.length = 0, box.padding = 0.3) +
+  scale_color_manual(values = c("Up" = "red", "Down" = "black"), guide = "none") +
+  scale_x_continuous(
+    trans = "log2",
+    breaks = c(2^(-5:5)),
+    labels = c("-32", "-16", "-8", "-4", "-2", "1", "+2", "+4", "+8", "+16", "+32")
+  ) +
+  coord_cartesian(xlim = c(1/40, 40), ylim = c(y_floor, 0)) +
+  geom_vline(xintercept = 1, color = "black", linewidth = 0.5) +
+  geom_hline(yintercept = 0, color = "black", linewidth = 0.5) +
+  labs(x = "FC: WNV vs. Mock", y = "log10(p-value)",
+       title = paste0(b_title, " (", time_display, ")")) +
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold", size = 12),
+    panel.grid.minor = element_blank()
+  )
+
+p2
+# Combine panels side by side
+combined <- p1 + p2 +
+  plot_layout(widths = c(1, 1.5)) +
+  plot_annotation(tag_levels = "A")
+
+combined
+# ---- Generalizable GSEA and Volcano R2SDHF alone ----
+# ── User parameters ──────────────────────────────────────────────────────────
+# ── User parameters ──────────────────────────────────────────────────────────
+contrast      <- "TX24"
+pathway_regex <- "INNATE_IMMUN|INFLAMMATORY_RESPONSE|INTERFERON"
+nes_cutoff    <- 1.5
+pval_cutoff   <- 0.05
+n_labels      <- 25
+
+# ── Load data ────────────────────────────────────────────────────────────────
+base_dir     <- "data/Anderson-Suthar_collab/r_objects"
+gsea_results <- readRDS(file.path(base_dir, paste0("fgsea_", contrast, "_vs_Mock(R2SDHF).rds")))
+res_results  <- readRDS(file.path(base_dir, paste0("res_", contrast, "(R2SDHF).rds")))
+
+time_display <- paste0(str_extract(contrast, "\\d+"), "h post Infection")
+
+# Filter to significant pathways and clean names for display
+sig_paths <- gsea_results %>%
+  filter(abs(NES) > nes_cutoff, pval < pval_cutoff) %>%
+  mutate(
+    pathway_clean = str_remove(pathway, "^HALLMARK_") %>%
+      str_replace_all("_", " ") %>%
+      str_to_title(),
+    direction = ifelse(NES > 0, "Enriched", "Suppressed"),
+    neg_log10_padj = -log10(padj)
+  ) %>%
+  arrange(NES)
+
+sig_paths$pathway_clean <- factor(sig_paths$pathway_clean, levels = sig_paths$pathway_clean)
+
+# Lollipop bubble plot of significant hallmark pathways
+p1 <- ggplot(sig_paths, aes(x = NES, y = pathway_clean)) +
+  geom_segment(aes(x = 0, xend = NES, y = pathway_clean, yend = pathway_clean),
+               color = "grey60", linewidth = 0.4) +
+  geom_point(aes(size = neg_log10_padj, fill = direction), shape = 21, stroke = 0.3) +
+  scale_fill_manual(values = c("Enriched" = "#D73027", "Suppressed" = "#4575B4")) +
+  scale_size_continuous(range = c(2, 7), name = "-log10(p-value)") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  labs(x = "Normalized Enrichment Score (NES)", y = NULL, fill = "Direction",
+       title = paste0("WNV vs. Mock (", time_display, ")")) +
+  theme_minimal(base_size = 11) +
+  theme(panel.grid.major.y = element_blank(), legend.position = "right",
+        plot.title = element_text(face = "bold", size = 12))
+
+# Pull leading-edge genes from the WNV GSEA matching the target regex
+target_paths <- gsea_results %>%
+  filter(str_detect(pathway, regex(pathway_regex, ignore_case = TRUE)))
+target_genes <- unique(unlist(target_paths$leadingEdge))
+
+# Build volcano data frame with fold change and target gene flags
+volcano_df <- res_results %>%
+  as.data.frame() %>%
+  rownames_to_column("gene") %>%
+  mutate(
+    FC = 2^logFC,
+    log10_p = log10(P.Value),
+    is_target = gene %in% target_genes,
+    target_direction = case_when(
+      is_target & logFC > 0 ~ "Up",
+      is_target & logFC < 0 ~ "Down",
+      TRUE ~ NA_character_
+    )
+  )
+
+# Set y-axis floor based on the least significant target gene
+target_min_p <- volcano_df %>%
+  filter(is_target) %>%
+  pull(log10_p) %>%
+  min(na.rm = TRUE)
+y_floor <- target_min_p * 1.2
+
+# Select top N most significant target genes for labeling
+label_df <- volcano_df %>%
+  filter(is_target) %>%
+  slice_min(P.Value, n = n_labels)
+
+# Readable title derived from the pathway regex
+pathway_title <- str_replace_all(pathway_regex, "\\|", " / ") %>%
+  str_replace_all("_", " ") %>%
+  str_to_title()
+
+# Volcano plot highlighting leading-edge genes
+p2 <- ggplot(volcano_df, aes(x = FC, y = log10_p)) +
+  geom_point(data = filter(volcano_df, !is_target),
+             color = "grey70", size = 0.6, alpha = 0.4) +
+  geom_point(data = filter(volcano_df, is_target),
+             aes(color = target_direction), size = 1.8, alpha = 0.9) +
+  geom_text_repel(data = label_df,
+                  aes(label = gene), size = 2.8, fontface = "italic",
+                  max.overlaps = 20, segment.size = 0.3,
+                  min.segment.length = 0, box.padding = 0.4) +
+  scale_color_manual(values = c("Up" = "red", "Down" = "black"), guide = "none") +
+  scale_x_continuous(
+    trans = "log2",
+    breaks = c(2^(-5:5)),
+    labels = c("-32", "-16", "-8", "-4", "-2", "1", "+2", "+4", "+8", "+16", "+32")
+  ) +
+  coord_cartesian(xlim = c(1/45, 45), ylim = c(y_floor, 0)) +
+  geom_vline(xintercept = 1, color = "black", linewidth = 0.5) +
+  geom_hline(yintercept = 0, color = "black", linewidth = 0.5) +
+  labs(x = "FC: WNV vs. Mock", y = "log10(p-value)",
+       title = paste0("Innate Immunity Genes", " (", time_display, ")")) +
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold", size = 12),
+    panel.grid.minor = element_blank()
+  )
+
+# Combine panels side by side
+combined <- p1 + p2 +
+  plot_layout(widths = c(1, 1.5)) +
+  plot_annotation(tag_levels = "A")
+
+combined
+ggsave("figures/Shilu's vs Jimena/WNV24_gsea_volcano.pdf",combined, width = 14, height = 5, dpi = 300)
 # ---- Innate Heatmap ----
 library(tidyverse)
 library(pheatmap)
