@@ -4,14 +4,30 @@ library(dplyr)
 library(DESeq2)
 library(ggvenn)
 library(grid)
-
+library(readxl)
 # ----- Import data ----
+## Shilu's data
 #Import expression matrix in tsv format
 expr <- read.delim(
   "data/R2SDHF/Plasmo/R2SDHF-expression-matrix.tsv",
   check.names = FALSE,
   stringsAsFactors = FALSE
 )
+
+## Jimina's data
+#Import 
+de_files <- list.files("data/Anderson-Suthar_collab", pattern = "^DE_", full.names = TRUE)
+
+de_list <- setNames(
+  lapply(de_files, function(f) {
+    if (grepl("\\.csv$", f)) read.csv(f) else read_excel(f)
+  }),
+  gsub("\\.(xlsx|csv)$", "", basename(de_files))
+)
+
+names(de_list)
+
+
 
 # ---- set up data frame ----
 # Identify count columns
@@ -113,7 +129,7 @@ counts <- counts[, colnames(counts) != "MAD_24_3"]
 
 #Save/load checkpoint
 # saveRDS(counts, "data/R2SDHF/r_objects/plasmo_counts_noMAD.rds")
-# counts <- readRDS("data/R2SDHF/r_objects/plasmo_counts_noMAD.rds")
+counts <- readRDS("data/R2SDHF/r_objects/plasmo_counts_noMAD.rds")
 
 # ---- set up deseq2 object ----
 sample_names <- colnames(counts)
@@ -187,7 +203,7 @@ res_shrunk_list <- readRDS("data/R2SDHF/Plasmo_resShrink_noMAD_qcmin10.rds")
 
 
 # ---- ADD mapping of gene names ----
-# ---- Collect all Ensembl IDs across contrasts ----
+# Ensembl IDs across contrasts ----
 all_ensembl <- res_shrunk_list |>
   purrr::map(~ rownames(.x)) |>
   unlist(use.names = FALSE) |>
