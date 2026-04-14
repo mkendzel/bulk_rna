@@ -8,12 +8,13 @@ library(DESeq2)
 library(ggvenn)
 library(grid)
 library(readxl)
-library(org.Hs.eg.db)
 library(org.Mm.eg.db)
 library(tibble)
 library(TissueEnrich)
 library(GSEABase)
 library(edgeR)
+library(fgsea)
+library(msigdbr)
 # ----- Import data ----
 
 # Geneset maps (load one based on model organism of interest)
@@ -230,8 +231,6 @@ res_shrunk_liver[["treatment_dopc_vs_cl"]] <- DESeq2::lfcShrink(
   type = "ashr"
 )
 
-
-
 #Save/load DESeq object
 saveRDS(dds_liver,"data/LSS7T8/r_objects/dds_liver.rds")
 saveRDS(DESeq2::counts(dds_liver, normalized = TRUE), "data/LSS7T8/r_objects/norm_counts_liver.rds")
@@ -241,7 +240,7 @@ saveRDS(res_shrunk_liver, "data/LSS7T8/r_objects/res_shrunk_liver.rds")
 res_wald_liver <- readRDS("data/LSS7T8/r_objects/res_wald_liver.rds")
 res_shrunk_liver <- readRDS("data/LSS7T8/r_objects/res_shrunk_liver.rds")
 # ---- Annotated ----
-library(org.Mm.eg.db)
+
 all_ensembl_liver <- res_shrunk_liver |>
   purrr::map(~ rownames(.x)) |>
   unlist(use.names = FALSE) |>
@@ -288,9 +287,8 @@ saveRDS(res_wald_liver_annotated, "data/LSS7T8/r_objects/resWald_liver_annotated
 res_shrunk_liver_annotated <- readRDS("data/LSS7T8/r_objects/resShrink_liver_annotated.rds")
 res_wald_liver_annotated <- readRDS("data/LSS7T8/r_objects/resWald_liver_annotated.rds")
 
-# ---- FgSEA for LSS7T* ----
-library(fgsea)
-library(msigdbr)
+# ---- FgSEA for LSS7T8 ----
+
 
 # Get gene sets (example: Hallmark, human)
 gmt_path <- "data/geneset/mh.all.v2026.1.Mm.symbols.gmt"
@@ -318,15 +316,15 @@ run_gsea <- function(tt, pathways, nPermSimple = 10000) {
 
 res_cl_vs_mock   <- res_wald_liver_annotated[["treatment_cl_vs_control"]]
 res_dopc_vs_mock <- res_wald_liver_annotated[["treatment_dopc_vs_control"]]
-res_cl_vs_dopc   <- res_wald_liver_annotated[["treatment_cl_vs_dopc"]]
+res_dopc_vs_cl   <- res_wald_liver_annotated[["treatment_dopc_vs_cl"]]
 
 fgsea_cl_vs_mock   <- run_gsea(res_cl_vs_mock, pathways)
 fgsea_dopc_vs_mock <- run_gsea(res_dopc_vs_mock, pathways)
-fgsea_cl_vs_dopc   <- run_gsea(res_cl_vs_dopc, pathways)
+fgsea_dopc_vs_cl    <- run_gsea(res_dopc_vs_cl , pathways)
 
 saveRDS(fgsea_cl_vs_mock,   "data/LSS7T8/r_objects/fgsea_cl_vs_mock.rds")
 saveRDS(fgsea_dopc_vs_mock, "data/LSS7T8/r_objects/fgsea_dopc_vs_mock.rds")
-saveRDS(fgsea_cl_vs_dopc,   "data/LSS7T8/r_objects/fgsea_cl_vs_dopc.rds")
+saveRDS(fgsea_dopc_vs_cl,   "data/LSS7T8/r_objects/fgsea_dopc_vs_cl.rds")
 
 # Tissue check
 
@@ -363,26 +361,89 @@ counts_spleen <- counts[, spleen_samples]
 info_spleen <- sample_info[spleen_samples, ]
 info_spleen$treatment <- relevel(droplevels(info_spleen$treatment), ref = "control")
 
-# Create DESEQ2 object
+# DESEQ object creation
 dds_spleen <- DESeqDataSetFromMatrix(
   countData = round(as.matrix(counts_spleen)),
   colData = info_spleen,
   design = ~ treatment
 )
 
-# Remove lowly expressed genes
-keep <- rowSums(DESeq2::counts(dds_spleen) >= 10) >= 5
+# (This object is only used to check if biomarkers were filtered out)
+dds_spleen_unfiltered <- DESeqDataSetFromMatrix(
+  countData = round(as.matrix(counts_spleen)),
+  colData = info_spleen,
+  design = ~ treatment
+)
+
+#Subset low expression genes out using filterByExpr from edgeR
+keep <- filterByExpr(dds_spleen, group = dds_spleen$treatment)
 dds_spleen <- dds_spleen[keep, ]
 
-#Variance stabalization for PCA
+
+## Check biomarkers ##
+genes_of_interest <- c("Ifnb1", "Irf7", "Ifng", "Il6", "Cxcl10")
+
+goi_ensembl <- na.omit(mouse_gene_map$ENSEMBL[mouse_gene_map$SYMBOL %in% genes_of_interest])
+
+counts_unfilt <- DESeq2::counts(dds_spleen_unfiltered)
+counts_filt   <- DESeq2::counts(dds_spleen)
+cpm_unfilt    <- edgeR::cpm(counts_unfilt)
+cpm_filt      <- edgeR::cpm(counts_filt)
+
+goi_present_unfilt <- goi_ensembl[goi_ensembl %in% rownames(counts_unfilt)]
+goi_present_filt   <- goi_ensembl[goi_ensembl %in% rownames(counts_filt)]
+
+summarise_goi <- function(ensembl_ids, counts_mat, cpm_mat, gene_map) {
+  data.frame(
+    symbol        = gene_map$SYMBOL[match(ensembl_ids, gene_map$ENSEMBL)],
+    mean_count    = rowMeans(counts_mat[ensembl_ids, , drop = FALSE]),
+    median_count  = apply(counts_mat[ensembl_ids, , drop = FALSE], 1, median),
+    max_count     = apply(counts_mat[ensembl_ids, , drop = FALSE], 1, max),
+    mean_cpm      = rowMeans(cpm_mat[ensembl_ids, , drop = FALSE]),
+    median_cpm    = apply(cpm_mat[ensembl_ids, , drop = FALSE], 1, median),
+    n_samples_gt0 = rowSums(counts_mat[ensembl_ids, , drop = FALSE] > 0)
+  )
+}
+
+goi_summary_unfilt <- summarise_goi(goi_present_unfilt, counts_unfilt, cpm_unfilt, mouse_gene_map)
+goi_summary_filt   <- summarise_goi(goi_present_filt,   counts_filt,   cpm_filt,   mouse_gene_map)
+
+lost <- goi_present_unfilt[!goi_present_unfilt %in% goi_present_filt]
+
+list(
+  before   = goi_summary_unfilt,
+  after    = goi_summary_filt,
+  filtered = if (length(lost) > 0) mouse_gene_map$SYMBOL[match(lost, mouse_gene_map$ENSEMBL)] else "all genes survived"
+)
+##
+
+# variance stabilization for PCA
 vsd_spleen <- DESeq2::vst(dds_spleen)
 DESeq2::plotPCA(vsd_spleen, intgroup = "treatment")
 
-# Run DESeq2
+# run DESeq2
 dds_spleen <- DESeq2::DESeq(dds_spleen, minReplicatesForReplace = Inf)
 
-#Shrunken results
+#Grab coefficient names (except intercept)
 coef_names_spleen <- DESeq2::resultsNames(dds_spleen)[-1]
+
+# Wald test stat results (full comp)
+res_wald_spleen <- setNames(
+  lapply(coef_names_spleen, function(coef_name) {
+    DESeq2::results(dds_spleen, name = coef_name, independentFiltering = FALSE)
+  }),
+  coef_names_spleen
+)
+
+
+# Add the specific contrast that DESeq2 doesn't automatically calculate (cl vs dopc)
+res_wald_spleen[["treatment_dopc_vs_cl"]] <- DESeq2::results(
+  dds_spleen,
+  contrast = c("treatment", "dopc", "cl"),
+  independentFiltering = FALSE
+)
+
+# Shrink coefficients using apeglm for all comparisons
 res_shrunk_spleen <- setNames(
   lapply(coef_names_spleen, function(coef_name) {
     DESeq2::lfcShrink(dds_spleen, coef = coef_name, type = "apeglm")
@@ -390,32 +451,22 @@ res_shrunk_spleen <- setNames(
   coef_names_spleen
 )
 
-#Wald test stat results (full comp)
-res_wald_spleen <- setNames(
-  lapply(coef_names_spleen, function(coef_name) {
-    DESeq2::results(dds_spleen, name = coef_name)
-  }),
-  coef_names_spleen
+# Shrink the specific contrast that DESeq2 doesn't automatically calculate (cl vs dopc) using ashr
+res_shrunk_spleen[["treatment_dopc_vs_cl"]] <- DESeq2::lfcShrink(
+  dds_spleen,
+  res  = res_wald_spleen[["treatment_dopc_vs_cl"]],
+  type = "ashr"
 )
-res_wald_spleen[["treatment_cl_vs_d"]] <- DESeq2::results(dds_spleen, contrast = c("treatment", "cl", "d"))
 
-res_spleen <- DESeq2::results(dds_spleen)
-DESeq2::plotMA(res_spleen, ylim = c(-5, 5))
+#Save/load DESeq object
+saveRDS(dds_spleen,"data/LSS7T8/r_objects/dds_spleen.rds")
+saveRDS(DESeq2::counts(dds_spleen, normalized = TRUE), "data/LSS7T8/r_objects/norm_counts_spleen.rds")
+saveRDS(res_wald_spleen, "data/LSS7T8/r_objects/res_wald_spleen.rds")
+saveRDS(res_shrunk_spleen, "data/LSS7T8/r_objects/res_shrunk_spleen.rds")
 
-#Save and load checkpoints
-saveRDS(dds_spleen, "data/LSS7T8/r_objects/plasmo_dds_spleen_raw.rds")
-dds_spleen <- readRDS("data/LSS7T8/r_objects/plasmo_dds_spleen_raw.rds")
-
-saveRDS(counts(dds_spleen, normalized = TRUE), "data/LSS7T8/r_objects/plasmo_counts_spleen_normalized.rds")
-normalized_counts_spleen <- readRDS("data/LSS7T8/r_objects/plasmo_counts_spleen_normalized.rds")
-
-saveRDS(res_shrunk_spleen, "data/LSS7T8/r_objects/plasmo_resShrink_spleen_qcmin10.rds")
-res_shrunk_spleen <- readRDS("data/LSS7T8/r_objects/plasmo_resShrink_spleen_qcmin10.rds")
-
-saveRDS(res_wald_spleen, "data/LSS7T8/r_objects/plasmo_resWald_spleen_qcmin10.rds")
-res_wald_spleen <- readRDS("data/LSS7T8/r_objects/plasmo_resWald_spleen_qcmin10.rds")
-
-#Annotated
+res_wald_spleen <- readRDS("data/LSS7T8/r_objects/res_wald_spleen.rds")
+res_shrunk_spleen <- readRDS("data/LSS7T8/r_objects/res_shrunk_spleen.rds")
+# ---- Annotated spleen----
 
 all_ensembl_spleen <- res_shrunk_spleen |>
   purrr::map(~ rownames(.x)) |>
@@ -438,7 +489,7 @@ gene_map_spleen <- gene_map_spleen |>
     symbol     = SYMBOL
   )
 
-res_shrunk_spleen <- purrr::map(res_shrunk_spleen, function(df) {
+res_shrunk_spleen_annotated <- purrr::map(res_shrunk_spleen, function(df) {
   df |>
     as.data.frame() |>
     rownames_to_column("ensembl_id") |>
@@ -447,7 +498,7 @@ res_shrunk_spleen <- purrr::map(res_shrunk_spleen, function(df) {
     as_tibble()
 })
 
-res_wald_spleen <- purrr::map(res_wald_spleen, function(df) {
+res_wald_spleen_annotated <- purrr::map(res_wald_spleen, function(df) {
   df |>
     as.data.frame() |>
     rownames_to_column("ensembl_id") |>
@@ -456,13 +507,51 @@ res_wald_spleen <- purrr::map(res_wald_spleen, function(df) {
     as_tibble()
 })
 
-# save/load
-saveRDS(res_shrunk_spleen, "data/LSS7T8/r_objects/plasmo_resShrink_spleen_qcmin10_annotated.rds")
-saveRDS(res_wald_spleen, "data/LSS7T8/r_objects/plasmo_resWald_spleen_qcmin10_annotated.rds")
+# Save Annotated
+saveRDS(res_shrunk_spleen_annotated, "data/LSS7T8/r_objects/resShrink_spleen_annotated.rds")
+saveRDS(res_wald_spleen_annotated, "data/LSS7T8/r_objects/resWald_spleen_annotated.rds")
 
-res_wald_spleen <- readRDS("data/LSS7T8/r_objects/plasmo_resWald_spleen_qcmin10_annotated.rds")
-res_shrunk_spleen <- readRDS("data/LSS7T8/r_objects/plasmo_resShrink_spleen_qcmin10_annotated.rds")
+res_shrunk_spleen_annotated <- readRDS("data/LSS7T8/r_objects/resShrink_spleen_annotated.rds")
+res_wald_spleen_annotated <- readRDS("data/LSS7T8/r_objects/resWald_spleen_annotated.rds")
 
+# ---- FgSEA for LSS7T8 Spleen ----
+
+
+# Get gene sets (example: Hallmark, human)
+gmt_path <- "data/geneset/mh.all.v2026.1.Mm.symbols.gmt"
+pathways <- gmtPathways(gmt_path)
+res_wald_spleen_annotated <- readRDS("data/LSS7T8/r_objects/resWald_spleen_annotated.rds")
+
+# Helper to build ranked list and run fgsea
+run_gsea <- function(tt, pathways, nPermSimple = 10000) {
+  tt <- as.data.frame(tt)
+  # Resolve duplicates by keeping the entry with highest baseMean
+  n_before <- nrow(tt)
+  tt <- tt[order(-tt$baseMean), ]
+  tt <- tt[!duplicated(tt$symbol), ]
+  n_dupes <- n_before - nrow(tt)
+  message("Removed ", n_dupes, " duplicate gene names (kept highest baseMean)")
+  
+  ranks <- setNames(tt$stat, tt$symbol)
+  ranks <- ranks[!is.na(names(ranks))]
+  ranks <- sort(ranks[!is.na(ranks)], decreasing = TRUE)
+  
+  res <- fgsea(pathways = pathways, stats = ranks, nPermSimple = nPermSimple)
+  res <- res[order(res$pval), ]
+  return(res)
+}
+
+res_cl_vs_mock   <- res_wald_spleen_annotated[["treatment_cl_vs_control"]]
+res_dopc_vs_mock <- res_wald_spleen_annotated[["treatment_dopc_vs_control"]]
+res_dopc_vs_cl   <- res_wald_spleen_annotated[["treatment_dopc_vs_cl"]]
+
+fgsea_cl_vs_mock   <- run_gsea(res_cl_vs_mock, pathways)
+fgsea_dopc_vs_mock <- run_gsea(res_dopc_vs_mock, pathways)
+fgsea_dopc_vs_cl    <- run_gsea(res_dopc_vs_cl , pathways)
+
+saveRDS(fgsea_cl_vs_mock,   "data/LSS7T8/r_objects/fgsea_cl_vs_mock.rds")
+saveRDS(fgsea_dopc_vs_mock, "data/LSS7T8/r_objects/fgsea_dopc_vs_mock.rds")
+saveRDS(fgsea_dopc_vs_cl,   "data/LSS7T8/r_objects/fgsea_dopc_vs_cl.rds")
 
 # Tissue check
 
