@@ -15,11 +15,13 @@ library(GSEABase)
 library(edgeR)
 library(fgsea)
 library(msigdbr)
+library(GSVA)
+library(limma)
 # ----- Import data ----
 
 # Geneset maps (load one based on model organism of interest)
 mouse_gene_map <- readRDS("data/geneset/mouse_gene_map_ensembl_symbol.rds")
-human_gene_map <- readRDS("data/geneset/human_gene_map_ensembl_symbol.rds")
+# human_gene_map <- readRDS("data/geneset/human_gene_map_ensembl_symbol.rds")
 #Import expression matrix in tsv format
 expr <- read.delim(
   "data/LSS7T8/plasmidsaurus/LSS7T8-expression-matrix.tsv",
@@ -108,7 +110,7 @@ list(
 
 #Save/load checkpoint
 saveRDS(counts, "data/LSS7T8/r_objects/plasmid_counts(all).rds")
-counts <- readRDS("data/LSS7T8/r_objects/plasmid_counts(all).rds")
+
 
 # Parse sample metadata from column names
 sample_info <- data.frame(
@@ -122,6 +124,67 @@ sample_info <- data.frame(
 sample_info$treatment <- factor(sample_info$treatment)
 sample_info$tissue <- factor(sample_info$tissue)
 sample_info$treatment <- relevel(factor(sample_info$treatment), ref = "control")
+
+saveRDS(sample_info, "data/LSS7T8/r_objects/sample_info.rds")
+# =============================================
+# ---- Tissue-specific Limma-voom analyses ----
+# =============================================
+counts <- readRDS("data/LSS7T8/r_objects/plasmid_counts(all).rds")
+sample_info <- readRDS("data/LSS7T8/r_objects/sample_info.rds")
+mouse_gene_map <- readRDS("data/geneset/mouse_gene_map_ensembl_symbol.rds")
+
+# Subset to liver
+liver_samples <- sample_info$tissue == "liver"
+counts_liver <- counts[, liver_samples]
+info_liver <- sample_info[liver_samples, ]
+info_liver$treatment <- relevel(droplevels(info_liver$treatment), ref = "control")
+
+# Create DGEList and filter
+dge <- DGEList(counts = round(as.matrix(counts_liver)), group = info_liver$treatment)
+keep <- filterByExpr(dge)
+dge <- dge[keep, , keep.lib.sizes = FALSE]
+dge <- calcNormFactors(dge)
+
+# Design matrix and voom
+design <- model.matrix(~ treatment, data = info_liver)
+v <- voom(dge, design, plot = TRUE)
+fit <- lmFit(v, design)
+fit <- eBayes(fit)
+
+# Extract results for reference-level comparisons
+coef_names <- colnames(design)[-1]
+res_voom_liver <- setNames(
+  lapply(coef_names, function(coef) {
+    topTable(fit, coef = coef, number = Inf, sort.by = "none")
+  }),
+  coef_names
+)
+
+# Add CL vs DOPC contrast
+contr_matrix <- makeContrasts(
+  treatmentcl_vs_dopc = treatmentcl - treatmentdopc,
+  levels = design
+)
+fit2 <- contrasts.fit(fit, contr_matrix)
+fit2 <- eBayes(fit2)
+res_voom_liver[["treatment_cl_vs_dopc"]] <- topTable(fit2, coef = 1, number = Inf, sort.by = "none")
+
+# Annotate with gene symbols
+res_voom_liver_annotated <- lapply(res_voom_liver, function(df) {
+  df %>%
+    rownames_to_column("ensembl_id") %>%
+    mutate(ensembl_id = sub("\\..*$", "", ensembl_id)) %>%
+    left_join(
+      mouse_gene_map %>% distinct(ENSEMBL, .keep_all = TRUE),
+      by = c("ensembl_id" = "ENSEMBL")
+    ) %>%
+    as_tibble()
+})
+
+# Save
+saveRDS(v, "data/LSS7T8/r_objects/voom_liver.rds")
+saveRDS(res_voom_liver, "data/LSS7T8/r_objects/res_voom_liver.rds")
+saveRDS(res_voom_liver_annotated, "data/LSS7T8/r_objects/res_voom_liver_annotated.rds")
 
 # ==================================
 # ---- Tissue-specific DESeq 2 analyses ----
@@ -237,9 +300,11 @@ saveRDS(DESeq2::counts(dds_liver, normalized = TRUE), "data/LSS7T8/r_objects/nor
 saveRDS(res_wald_liver, "data/LSS7T8/r_objects/res_wald_liver.rds")
 saveRDS(res_shrunk_liver, "data/LSS7T8/r_objects/res_shrunk_liver.rds")
 
-res_wald_liver <- readRDS("data/LSS7T8/r_objects/res_wald_liver.rds")
+# ---- Annotated liver----
+# Load objects
+dds_liver        <- readRDS("data/LSS7T8/r_objects/dds_liver.rds")
 res_shrunk_liver <- readRDS("data/LSS7T8/r_objects/res_shrunk_liver.rds")
-# ---- Annotated ----
+res_wald_liver   <- readRDS("data/LSS7T8/r_objects/res_wald_liver.rds")
 
 all_ensembl_liver <- res_shrunk_liver |>
   purrr::map(~ rownames(.x)) |>
@@ -253,6 +318,7 @@ gene_map_liver <- AnnotationDbi::select(
   keytype = "ENSEMBL",
   columns = c("ENTREZID", "SYMBOL")
 )
+
 gene_map_liver <- gene_map_liver |>
   as_tibble() |>
   distinct(ENSEMBL, .keep_all = TRUE) |>
@@ -280,16 +346,77 @@ res_wald_liver_annotated <- purrr::map(res_wald_liver, function(df) {
     as_tibble()
 })
 
-# Save Annotated
+# Build symbol-annotated normalized count matrix
+norm_counts_liver <- counts(dds_liver, normalized = TRUE)
+rownames(norm_counts_liver) <- sub("\\..*$", "", rownames(norm_counts_liver))
+
+anno <- gene_map_liver |>
+  filter(!is.na(symbol), !duplicated(ensembl_id))
+
+norm_counts_liver <- norm_counts_liver[rownames(norm_counts_liver) %in% anno$ensembl_id, ]
+symbol_map <- setNames(anno$symbol, anno$ensembl_id)
+rownames(norm_counts_liver) <- symbol_map[rownames(norm_counts_liver)]
+norm_counts_liver <- norm_counts_liver[!is.na(rownames(norm_counts_liver)), ]
+
+# For duplicate symbols, keep the row with highest mean expression
+norm_counts_liver <- norm_counts_liver[order(-rowMeans(norm_counts_liver)), ]
+norm_counts_liver <- norm_counts_liver[!duplicated(rownames(norm_counts_liver)), ]
+
+# Save all
 saveRDS(res_shrunk_liver_annotated, "data/LSS7T8/r_objects/resShrink_liver_annotated.rds")
-saveRDS(res_wald_liver_annotated, "data/LSS7T8/r_objects/resWald_liver_annotated.rds")
+saveRDS(res_wald_liver_annotated,   "data/LSS7T8/r_objects/resWald_liver_annotated.rds")
+saveRDS(norm_counts_liver,          "data/LSS7T8/r_objects/norm_counts_liver_symbols.rds")
 
+
+
+
+# ---- GSVA for LSS7T8 Liver ----
+# normalized counts with gene symbols as rownames
+norm_counts_liver <- readRDS("data/LSS7T8/r_objects/norm_counts_liver_symbols.rds")
+
+# gsva parameters
+gsva_par <- gsvaParam(
+  exprData  = norm_counts_liver,
+  geneSets  = pathways,
+  minSize   = 10,
+  maxSize   = 500
+)
+
+#run GSVA
+gsva_scores_liver <- gsva(gsva_par, verbose = TRUE)
+
+# Set up limma design and contrasts for GSVA scores
+treatment <- factor(colData(dds_liver)$treatment, levels = c("control", "cl", "dopc"))
+design <- model.matrix(~ 0 + treatment)
+colnames(design) <- levels(treatment)
+
+#
+contrasts <- makeContrasts(
+  cl_vs_control   = cl - control,
+  dopc_vs_control = dopc - control,
+  dopc_vs_cl      = dopc - cl,
+  levels = design
+)
+
+fit <- lmFit(gsva_scores_liver, design)
+fit <- contrasts.fit(fit, contrasts)
+
+gssizes <- rowSums(gsva_scores_liver != 0)
+fit <- eBayes(fit, robust = TRUE, trend = gssizes)
+
+gsva_results_liver <- list(
+  cl_vs_control   = topTable(fit, coef = "cl_vs_control",   n = Inf, sort.by = "p"),
+  dopc_vs_control = topTable(fit, coef = "dopc_vs_control", n = Inf, sort.by = "p"),
+  dopc_vs_cl      = topTable(fit, coef = "dopc_vs_cl",      n = Inf, sort.by = "p")
+)
+
+saveRDS(gsva_scores_liver,  "data/LSS7T8/r_objects/gsva_scores_liver.rds")
+saveRDS(gsva_results_liver, "data/LSS7T8/r_objects/gsva_results_liver.rds")
+
+
+# ---- FgSEA for LSS7T8 Liver ----
 res_shrunk_liver_annotated <- readRDS("data/LSS7T8/r_objects/resShrink_liver_annotated.rds")
-res_wald_liver_annotated <- readRDS("data/LSS7T8/r_objects/resWald_liver_annotated.rds")
-
-# ---- FgSEA for LSS7T8 ----
-
-
+res_wald_liver_annotated   <- readRDS("data/LSS7T8/r_objects/resWald_liver_annotated.rds")
 # Get gene sets (example: Hallmark, human)
 gmt_path <- "data/geneset/mh.all.v2026.1.Mm.symbols.gmt"
 pathways <- gmtPathways(gmt_path)
