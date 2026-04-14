@@ -209,9 +209,9 @@ res_wald_liver <- setNames(
 
 
 # Add the specific contrast that DESeq2 doesn't automatically calculate (cl vs dopc)
-res_wald_liver[["treatment_cl_vs_dopc"]] <- DESeq2::results(
+res_wald_liver[["treatment_dopc_vs_cl"]] <- DESeq2::results(
   dds_liver,
-  contrast = c("treatment", "cl", "dopc"),
+  contrast = c("treatment", "dopc", "cl"),
   independentFiltering = FALSE
 )
 
@@ -224,9 +224,9 @@ res_shrunk_liver <- setNames(
 )
 
 # Shrink the specific contrast that DESeq2 doesn't automatically calculate (cl vs dopc) using ashr
-res_shrunk_liver[["treatment_cl_vs_dopc"]] <- DESeq2::lfcShrink(
+res_shrunk_liver[["treatment_dopc_vs_cl"]] <- DESeq2::lfcShrink(
   dds_liver,
-  res  = res_wald_liver[["treatment_cl_vs_dopc"]],
+  res  = res_wald_liver[["treatment_dopc_vs_cl"]],
   type = "ashr"
 )
 
@@ -238,8 +238,10 @@ saveRDS(DESeq2::counts(dds_liver, normalized = TRUE), "data/LSS7T8/r_objects/nor
 saveRDS(res_wald_liver, "data/LSS7T8/r_objects/res_wald_liver.rds")
 saveRDS(res_shrunk_liver, "data/LSS7T8/r_objects/res_shrunk_liver.rds")
 
-
-# Annotated object
+res_wald_liver <- readRDS("data/LSS7T8/r_objects/res_wald_liver.rds")
+res_shrunk_liver <- readRDS("data/LSS7T8/r_objects/res_shrunk_liver.rds")
+# ---- Annotated ----
+library(org.Mm.eg.db)
 all_ensembl_liver <- res_shrunk_liver |>
   purrr::map(~ rownames(.x)) |>
   unlist(use.names = FALSE) |>
@@ -261,7 +263,7 @@ gene_map_liver <- gene_map_liver |>
     symbol     = SYMBOL
   )
 
-res_shrunk_liver <- purrr::map(res_shrunk_liver, function(df) {
+res_shrunk_liver_annotated <- purrr::map(res_shrunk_liver, function(df) {
   df |>
     as.data.frame() |>
     rownames_to_column("ensembl_id") |>
@@ -270,7 +272,7 @@ res_shrunk_liver <- purrr::map(res_shrunk_liver, function(df) {
     as_tibble()
 })
 
-res_wald_liver <- purrr::map(res_wald_liver, function(df) {
+res_wald_liver_annotated <- purrr::map(res_wald_liver, function(df) {
   df |>
     as.data.frame() |>
     rownames_to_column("ensembl_id") |>
@@ -280,11 +282,51 @@ res_wald_liver <- purrr::map(res_wald_liver, function(df) {
 })
 
 # Save Annotated
-saveRDS(res_shrunk_liver, "data/LSS7T8/r_objects/plasmo_resShrink_liver_qcmin10_annotated.rds")
-saveRDS(res_wald_liver, "data/LSS7T8/r_objects/plasmo_resWald_liver_qcmin10_annotated.rds")
+saveRDS(res_shrunk_liver_annotated, "data/LSS7T8/r_objects/resShrink_liver_annotated.rds")
+saveRDS(res_wald_liver_annotated, "data/LSS7T8/r_objects/resWald_liver_annotated.rds")
 
-res_shrunk_liver <- readRDS("data/LSS7T8/r_objects/plasmo_resShrink_liver_qcmin10_annotated.rds")
-res_wald_liver <- readRDS("data/LSS7T8/r_objects/plasmo_resWald_liver_qcmin10_annotated.rds")
+res_shrunk_liver_annotated <- readRDS("data/LSS7T8/r_objects/resShrink_liver_annotated.rds")
+res_wald_liver_annotated <- readRDS("data/LSS7T8/r_objects/resWald_liver_annotated.rds")
+
+# ---- FgSEA for LSS7T* ----
+library(fgsea)
+library(msigdbr)
+
+# Get gene sets (example: Hallmark, human)
+gmt_path <- "data/geneset/mh.all.v2026.1.Mm.symbols.gmt"
+pathways <- gmtPathways(gmt_path)
+res_wald_liver_annotated <- readRDS("data/LSS7T8/r_objects/resWald_liver_annotated.rds")
+
+# Helper to build ranked list and run fgsea
+run_gsea <- function(tt, pathways, nPermSimple = 10000) {
+  tt <- as.data.frame(tt)
+  # Resolve duplicates by keeping the entry with highest baseMean
+  n_before <- nrow(tt)
+  tt <- tt[order(-tt$baseMean), ]
+  tt <- tt[!duplicated(tt$symbol), ]
+  n_dupes <- n_before - nrow(tt)
+  message("Removed ", n_dupes, " duplicate gene names (kept highest baseMean)")
+
+  ranks <- setNames(tt$stat, tt$symbol)
+  ranks <- ranks[!is.na(names(ranks))]
+  ranks <- sort(ranks[!is.na(ranks)], decreasing = TRUE)
+
+  res <- fgsea(pathways = pathways, stats = ranks, nPermSimple = nPermSimple)
+  res <- res[order(res$pval), ]
+  return(res)
+}
+
+res_cl_vs_mock   <- res_wald_liver_annotated[["treatment_cl_vs_control"]]
+res_dopc_vs_mock <- res_wald_liver_annotated[["treatment_dopc_vs_control"]]
+res_cl_vs_dopc   <- res_wald_liver_annotated[["treatment_cl_vs_dopc"]]
+
+fgsea_cl_vs_mock   <- run_gsea(res_cl_vs_mock, pathways)
+fgsea_dopc_vs_mock <- run_gsea(res_dopc_vs_mock, pathways)
+fgsea_cl_vs_dopc   <- run_gsea(res_cl_vs_dopc, pathways)
+
+saveRDS(fgsea_cl_vs_mock,   "data/LSS7T8/r_objects/fgsea_cl_vs_mock.rds")
+saveRDS(fgsea_dopc_vs_mock, "data/LSS7T8/r_objects/fgsea_dopc_vs_mock.rds")
+saveRDS(fgsea_cl_vs_dopc,   "data/LSS7T8/r_objects/fgsea_cl_vs_dopc.rds")
 
 # Tissue check
 
