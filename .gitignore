@@ -12,9 +12,20 @@ omnipathr-log
 # Ignore all data
 data/*
 !data/README.md
+
+#add anderson-suthar readme
 !data/Anderson-Suthar_collab/
 data/Anderson-Suthar_collab/*
 !data/Anderson-Suthar_collab/README.md
 !data/Anderson-Suthar_collab/r_objects/
 data/Anderson-Suthar_collab/r_objects/*
 !data/Anderson-Suthar_collab/r_objects/README.md
+
+#add LSS7T8 readme
+!data/LSS7T8/
+data/LSS7T8/*
+!data/LSS7T8/README.md
+!data/LSS7T8/r_objects/
+data/LSS7T8/r_objects/*
+!data/LSS7T8/r_objects/README.md
+
