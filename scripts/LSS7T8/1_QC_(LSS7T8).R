@@ -129,6 +129,7 @@ saveRDS(sample_info, "data/LSS7T8/r_objects/sample_info.rds")
 # =============================================
 # ---- Tissue-specific Limma-voom analyses ----
 # =============================================
+# ----------------- Liver ---------------------
 counts <- readRDS("data/LSS7T8/r_objects/plasmid_counts(all).rds")
 sample_info <- readRDS("data/LSS7T8/r_objects/sample_info.rds")
 mouse_gene_map <- readRDS("data/geneset/mouse_gene_map_ensembl_symbol.rds")
@@ -160,14 +161,14 @@ res_voom_liver <- setNames(
   coef_names
 )
 
-# Add CL vs DOPC contrast
+# Add DOPC vs CL contrast
 contr_matrix <- makeContrasts(
-  treatmentcl_vs_dopc = treatmentcl - treatmentdopc,
+  treatmentdopc_vs_cl = treatmentdopc - treatmentcl,
   levels = design
 )
 fit2 <- contrasts.fit(fit, contr_matrix)
 fit2 <- eBayes(fit2)
-res_voom_liver[["treatment_cl_vs_dopc"]] <- topTable(fit2, coef = 1, number = Inf, sort.by = "none")
+res_voom_liver[["treatment_dopc_vs_cl"]] <- topTable(fit2, coef = 1, number = Inf, sort.by = "none")
 
 # Annotate with gene symbols
 res_voom_liver_annotated <- lapply(res_voom_liver, function(df) {
@@ -186,10 +187,152 @@ saveRDS(v, "data/LSS7T8/r_objects/voom_liver.rds")
 saveRDS(res_voom_liver, "data/LSS7T8/r_objects/res_voom_liver.rds")
 saveRDS(res_voom_liver_annotated, "data/LSS7T8/r_objects/res_voom_liver_annotated.rds")
 
-# ==================================
+# ------------------- Spleen ---------------------
+counts <- readRDS("data/LSS7T8/r_objects/plasmid_counts(all).rds")
+sample_info <- readRDS("data/LSS7T8/r_objects/sample_info.rds")
+mouse_gene_map <- readRDS("data/geneset/mouse_gene_map_ensembl_symbol.rds")
+
+# Subset to spleen
+spleen_samples <- sample_info$tissue == "spleen"
+counts_spleen <- counts[, spleen_samples]
+info_spleen <- sample_info[spleen_samples, ]
+info_spleen$treatment <- relevel(droplevels(info_spleen$treatment), ref = "control")
+
+# Create DGEList and filter
+dge <- DGEList(counts = round(as.matrix(counts_spleen)), group = info_spleen$treatment)
+keep <- filterByExpr(dge)
+dge <- dge[keep, , keep.lib.sizes = FALSE]
+dge <- calcNormFactors(dge)
+
+# Design matrix and voom
+design <- model.matrix(~ treatment, data = info_spleen)
+v <- voom(dge, design, plot = TRUE)
+fit <- lmFit(v, design)
+fit <- eBayes(fit)
+
+# Extract results for reference-level comparisons
+coef_names <- colnames(design)[-1]
+res_voom_spleen <- setNames(
+  lapply(coef_names, function(coef) {
+    topTable(fit, coef = coef, number = Inf, sort.by = "none")
+  }),
+  coef_names
+)
+
+# Add CL vs DOPC contrast
+contr_matrix <- makeContrasts(
+  treatmentdopc_vs_cl = treatmentdopc - treatmentcl,
+  levels = design
+)
+fit2 <- contrasts.fit(fit, contr_matrix)
+fit2 <- eBayes(fit2)
+res_voom_spleen[["treatment_dopc_vs_cl"]] <- topTable(fit2, coef = 1, number = Inf, sort.by = "none")
+
+# Annotate with gene symbols
+res_voom_spleen_annotated <- lapply(res_voom_spleen, function(df) {
+  df %>%
+    rownames_to_column("ensembl_id") %>%
+    mutate(ensembl_id = sub("\\..*$", "", ensembl_id)) %>%
+    left_join(
+      mouse_gene_map %>% distinct(ENSEMBL, .keep_all = TRUE),
+      by = c("ensembl_id" = "ENSEMBL")
+    ) %>%
+    as_tibble()
+})
+
+# Save
+saveRDS(v, "data/LSS7T8/r_objects/voom_spleen.rds")
+saveRDS(res_voom_spleen, "data/LSS7T8/r_objects/res_voom_spleen.rds")
+saveRDS(res_voom_spleen_annotated, "data/LSS7T8/r_objects/res_voom_spleen_annotated.rds")
+# =================================================
+# ---- limma-voom GSVA and fgsea analyses ----
+# =================================================
+
+# ---- Limma FgSEA for LSS7T8 Liver ----
+library(fgsea)
+library(msigdbr)
+res_voom_liver_annotated <- readRDS("data/LSS7T8/r_objects/res_voom_liver_annotated.rds")
+# Get gene sets (example: Hallmark, human)
+gmt_path <- "data/geneset/mh.all.v2026.1.Mm.symbols.gmt"
+pathways <- gmtPathways(gmt_path)
+
+
+# Helper to build ranked list and run fgsea
+run_gsea <- function(tt, pathways, gene_col = "SYMBOL", nPermSimple = 10000) {
+  tt <- tt[!is.na(tt[[gene_col]]) & tt[[gene_col]] != "", ]
+  
+  n_before <- nrow(tt)
+  tt <- tt[order(-tt$AveExpr), ]
+  tt <- tt[!duplicated(tt[[gene_col]]), ]
+  message("Removed ", n_before - nrow(tt), " duplicate gene names (kept highest AveExpr)")
+  
+  ranks <- setNames(tt$t, tt[[gene_col]])
+  ranks <- sort(ranks, decreasing = TRUE)
+  
+  res <- fgsea(pathways = pathways, stats = ranks, nPermSimple = nPermSimple)
+  res <- res[order(res$pval), ]
+  return(res)
+}
+
+res_cl_vs_mock   <- res_voom_liver_annotated[["treatmentcl"]]
+res_dopc_vs_mock <- res_voom_liver_annotated[["treatmentdopc"]]
+res_dopc_vs_cl   <- res_voom_liver_annotated[["treatment_dopc_vs_cl"]]
+
+# Run for each treatment comparison
+fgsea_cl_vs_mock   <- run_gsea(res_cl_vs_mock, pathways)
+fgsea_dopc_vs_mock <- run_gsea(res_dopc_vs_mock, pathways)
+fgsea_dopc_vs_cl    <- run_gsea(res_dopc_vs_cl , pathways)
+
+
+saveRDS(fgsea_cl_vs_mock,   "data/LSS7T8/r_objects/fgsea_cl_vs_mock(voom).rds")
+saveRDS(fgsea_dopc_vs_mock, "data/LSS7T8/r_objects/fgsea_dopc_vs_mock(voom).rds")
+saveRDS(fgsea_dopc_vs_cl,   "data/LSS7T8/r_objects/fgsea_dopc_vs_cl(voom).rds")
+
+# ---- Limma FgSEA for LSS7T8 spleen ----
+library(fgsea)
+library(msigdbr)
+res_voom_spleen_annotated <- readRDS("data/LSS7T8/r_objects/res_voom_spleen_annotated.rds")
+# Get gene sets (example: Hallmark, human)
+gmt_path <- "data/geneset/mh.all.v2026.1.Mm.symbols.gmt"
+pathways <- gmtPathways(gmt_path)
+
+
+# Helper to build ranked list and run fgsea
+run_gsea <- function(tt, pathways, gene_col = "SYMBOL", nPermSimple = 10000) {
+  tt <- tt[!is.na(tt[[gene_col]]) & tt[[gene_col]] != "", ]
+  
+  n_before <- nrow(tt)
+  tt <- tt[order(-tt$AveExpr), ]
+  tt <- tt[!duplicated(tt[[gene_col]]), ]
+  message("Removed ", n_before - nrow(tt), " duplicate gene names (kept highest AveExpr)")
+  
+  ranks <- setNames(tt$t, tt[[gene_col]])
+  ranks <- sort(ranks, decreasing = TRUE)
+  
+  res <- fgsea(pathways = pathways, stats = ranks, nPermSimple = nPermSimple)
+  res <- res[order(res$pval), ]
+  return(res)
+}
+
+res_cl_vs_mock   <- res_voom_spleen_annotated[["treatmentcl"]]
+res_dopc_vs_mock <- res_voom_spleen_annotated[["treatmentdopc"]]
+res_dopc_vs_cl   <- res_voom_spleen_annotated[["treatment_dopc_vs_cl"]]
+
+# Run for each treatment comparison
+fgsea_cl_vs_mock   <- run_gsea(res_cl_vs_mock, pathways)
+fgsea_dopc_vs_mock <- run_gsea(res_dopc_vs_mock, pathways)
+fgsea_dopc_vs_cl    <- run_gsea(res_dopc_vs_cl , pathways)
+
+
+saveRDS(fgsea_cl_vs_mock,   "data/LSS7T8/r_objects/fgsea_spleen_cl_vs_mock(voom).rds")
+saveRDS(fgsea_dopc_vs_mock, "data/LSS7T8/r_objects/fgsea_spleen_dopc_vs_mock(voom).rds")
+saveRDS(fgsea_dopc_vs_cl,   "data/LSS7T8/r_objects/fgsea_spleen_dopc_vs_cl(voom).rds")
+
+
+# ==========================================
 # ---- Tissue-specific DESeq 2 analyses ----
-# ==================================
-# ---- liver ----
+# ==========================================
+# ------------------ liver -----------------
 
 #Subset to liver
 liver_samples <- sample_info$tissue == "liver"
@@ -300,7 +443,7 @@ saveRDS(DESeq2::counts(dds_liver, normalized = TRUE), "data/LSS7T8/r_objects/nor
 saveRDS(res_wald_liver, "data/LSS7T8/r_objects/res_wald_liver.rds")
 saveRDS(res_shrunk_liver, "data/LSS7T8/r_objects/res_shrunk_liver.rds")
 
-# ---- Annotated liver----
+# -------------- Annotated liver------------
 # Load objects
 dds_liver        <- readRDS("data/LSS7T8/r_objects/dds_liver.rds")
 res_shrunk_liver <- readRDS("data/LSS7T8/r_objects/res_shrunk_liver.rds")
@@ -370,6 +513,11 @@ saveRDS(norm_counts_liver,          "data/LSS7T8/r_objects/norm_counts_liver_sym
 
 
 
+
+
+# =================================================
+# ---- DEseq 2 GSVA and fgsea analyses ----
+# =================================================
 # ---- GSVA for LSS7T8 Liver ----
 # normalized counts with gene symbols as rownames
 norm_counts_liver <- readRDS("data/LSS7T8/r_objects/norm_counts_liver_symbols.rds")
