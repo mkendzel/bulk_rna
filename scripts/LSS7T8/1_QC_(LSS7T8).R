@@ -284,9 +284,9 @@ fgsea_dopc_vs_mock <- run_gsea(res_dopc_vs_mock, pathways)
 fgsea_dopc_vs_cl    <- run_gsea(res_dopc_vs_cl , pathways)
 
 
-saveRDS(fgsea_cl_vs_mock,   "data/LSS7T8/r_objects/fgsea_cl_vs_mock(voom).rds")
-saveRDS(fgsea_dopc_vs_mock, "data/LSS7T8/r_objects/fgsea_dopc_vs_mock(voom).rds")
-saveRDS(fgsea_dopc_vs_cl,   "data/LSS7T8/r_objects/fgsea_dopc_vs_cl(voom).rds")
+saveRDS(fgsea_cl_vs_mock,   "data/LSS7T8/r_objects/fgsea_liver_cl_vs_mock(voom).rds")
+saveRDS(fgsea_dopc_vs_mock, "data/LSS7T8/r_objects/fgsea_liver_dopc_vs_mock(voom).rds")
+saveRDS(fgsea_dopc_vs_cl,   "data/LSS7T8/r_objects/fgsea_liver_dopc_vs_cl(voom).rds")
 
 # ---- Limma FgSEA for LSS7T8 spleen ----
 library(fgsea)
