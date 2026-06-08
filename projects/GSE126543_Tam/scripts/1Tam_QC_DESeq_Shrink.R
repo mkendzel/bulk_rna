@@ -10,16 +10,16 @@ library(readxl)
 
 
 # Load metadata
-gse <- getGEO(filename = "data/Anderson-Suthar_collab/GSE126543_Tam/GSE124439_series_matrix.txt")
+gse <- getGEO(filename = "projects/GSE126543_Tam/data/GSE124439_series_matrix.txt")
 metadata <- pData(gse)
 colnames(metadata)
-clinical <- read_excel("data/Anderson-Suthar_collab/GSE126543_Tam/1-s2.0-S221112471931263X-mmc3.xlsx",
+clinical <- read_excel("projects/GSE126543_Tam/data/1-s2.0-S221112471931263X-mmc3.xlsx",
                        sheet = "Table S1A")
 
 head(clinical)
 colnames(clinical)
 # Load counts
-counts <- read.table("data/Anderson-Suthar_collab/GSE126543_Tam/GSE124439_raw_counts_GRCh38.p13_NCBI.tsv",
+counts <- read.table("projects/GSE126543_Tam/data/GSE124439_raw_counts_GRCh38.p13_NCBI.tsv",
                      header = TRUE,
                      sep = "\t",
                      row.names = 1,
@@ -80,8 +80,8 @@ table(meta_medial$`ALS NMF subtype**`)
 # ---- QC For samples ----
 
 #Save/load checkpoint
-# saveRDS(counts, "data/Anderson-Suthar_collab/GSE126543_Tam/r_objects/counts_subset(motorcortex).rds")
-# counts <- readRDS("data/Anderson-Suthar_collab/GSE126543_Tam/r_objects/counts_subset(motorcortex).rds")
+# saveRDS(counts, "projects/GSE126543_Tam/data/r_objects/counts_subset(motorcortex).rds")
+# counts <- readRDS("projects/GSE126543_Tam/data/r_objects/counts_subset(motorcortex).rds")
 
 # ---- Lateral Motor Cortex dds----
 meta_lateral <- meta_lateral[match(colnames(counts_lateral), meta_lateral$geo_accession), ]
@@ -163,8 +163,8 @@ DESeq2::plotMA(res, ylim = c(-5, 5))
 
 
 #Save/load DESeq object
-# saveRDS(dds, "data/R2SDHF/r_objects/plasmo_dds_noMAD.rds")
-dds <- readRDS("data/R2SDHF/r_objects/plasmo_dds_noMAD.rds")
+# saveRDS(dds, "projects/R2SDHF/data/r_objects/plasmo_dds_noMAD.rds")
+dds <- readRDS("projects/R2SDHF/data/r_objects/plasmo_dds_noMAD.rds")
 
 # Normalied reads
 dds <- estimateSizeFactors(dds)
@@ -172,8 +172,8 @@ normalized_counts <- counts(dds, normalized=TRUE)
 
 
 #Save/load Shrunk Data
-saveRDS(res_shrunk_list, "data/R2SDHF/Plasmo_resShrink_noMAD_qcmin10.rds")
-res_shrunk_list <- readRDS("data/R2SDHF/Plasmo_resShrink_noMAD_qcmin10.rds")
+saveRDS(res_shrunk_list, "projects/R2SDHF/data/Plasmo_resShrink_noMAD_qcmin10.rds")
+res_shrunk_list <- readRDS("projects/R2SDHF/data/Plasmo_resShrink_noMAD_qcmin10.rds")
 
 
 # ---- ADD mapping of gene names ----
@@ -214,8 +214,8 @@ res_shrunk_list <- purrr::map(res_shrunk_list, function(df) {
   
 })
 
-saveRDS(res_shrunk_list, "data/R2SDHF/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
-res_shrunk_list <- readRDS("data/R2SDHF/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
+saveRDS(res_shrunk_list, "projects/R2SDHF/data/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
+res_shrunk_list <- readRDS("projects/R2SDHF/data/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
 
 
 

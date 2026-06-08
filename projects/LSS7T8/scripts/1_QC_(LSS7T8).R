@@ -20,11 +20,11 @@ library(limma)
 # ----- Import data ----
 
 # Geneset maps (load one based on model organism of interest)
-mouse_gene_map <- readRDS("data/geneset/mouse_gene_map_ensembl_symbol.rds")
-# human_gene_map <- readRDS("data/geneset/human_gene_map_ensembl_symbol.rds")
+mouse_gene_map <- readRDS("genesets/mouse_gene_map_ensembl_symbol.rds")
+# human_gene_map <- readRDS("genesets/human_gene_map_ensembl_symbol.rds")
 #Import expression matrix in tsv format
 expr <- read.delim(
-  "data/LSS7T8/plasmidsaurus/LSS7T8-expression-matrix.tsv",
+  "projects/LSS7T8/data/plasmidsaurus/LSS7T8-expression-matrix.tsv",
   check.names = FALSE,
   stringsAsFactors = FALSE
 )
@@ -109,7 +109,7 @@ list(
 # counts <- counts[, colnames(counts) != "d_spleen_9"] # DS18
 
 #Save/load checkpoint
-saveRDS(counts, "data/LSS7T8/r_objects/plasmid_counts(all).rds")
+saveRDS(counts, "projects/LSS7T8/data/r_objects/plasmid_counts(all).rds")
 
 
 # Parse sample metadata from column names
@@ -125,14 +125,14 @@ sample_info$treatment <- factor(sample_info$treatment)
 sample_info$tissue <- factor(sample_info$tissue)
 sample_info$treatment <- relevel(factor(sample_info$treatment), ref = "control")
 
-saveRDS(sample_info, "data/LSS7T8/r_objects/sample_info.rds")
+saveRDS(sample_info, "projects/LSS7T8/data/r_objects/sample_info.rds")
 # =============================================
 # ---- Tissue-specific Limma-voom analyses ----
 # =============================================
 # ----------------- Liver ---------------------
-counts <- readRDS("data/LSS7T8/r_objects/plasmid_counts(all).rds")
-sample_info <- readRDS("data/LSS7T8/r_objects/sample_info.rds")
-mouse_gene_map <- readRDS("data/geneset/mouse_gene_map_ensembl_symbol.rds")
+counts <- readRDS("projects/LSS7T8/data/r_objects/plasmid_counts(all).rds")
+sample_info <- readRDS("projects/LSS7T8/data/r_objects/sample_info.rds")
+mouse_gene_map <- readRDS("genesets/mouse_gene_map_ensembl_symbol.rds")
 
 # Subset to liver
 liver_samples <- sample_info$tissue == "liver"
@@ -183,14 +183,14 @@ res_voom_liver_annotated <- lapply(res_voom_liver, function(df) {
 })
 
 # Save
-saveRDS(v, "data/LSS7T8/r_objects/voom_liver.rds")
-saveRDS(res_voom_liver, "data/LSS7T8/r_objects/res_voom_liver.rds")
-saveRDS(res_voom_liver_annotated, "data/LSS7T8/r_objects/res_voom_liver_annotated.rds")
+saveRDS(v, "projects/LSS7T8/data/r_objects/voom_liver.rds")
+saveRDS(res_voom_liver, "projects/LSS7T8/data/r_objects/res_voom_liver.rds")
+saveRDS(res_voom_liver_annotated, "projects/LSS7T8/data/r_objects/res_voom_liver_annotated.rds")
 
 # ------------------- Spleen ---------------------
-counts <- readRDS("data/LSS7T8/r_objects/plasmid_counts(all).rds")
-sample_info <- readRDS("data/LSS7T8/r_objects/sample_info.rds")
-mouse_gene_map <- readRDS("data/geneset/mouse_gene_map_ensembl_symbol.rds")
+counts <- readRDS("projects/LSS7T8/data/r_objects/plasmid_counts(all).rds")
+sample_info <- readRDS("projects/LSS7T8/data/r_objects/sample_info.rds")
+mouse_gene_map <- readRDS("genesets/mouse_gene_map_ensembl_symbol.rds")
 
 # Subset to spleen
 spleen_samples <- sample_info$tissue == "spleen"
@@ -241,9 +241,9 @@ res_voom_spleen_annotated <- lapply(res_voom_spleen, function(df) {
 })
 
 # Save
-saveRDS(v, "data/LSS7T8/r_objects/voom_spleen.rds")
-saveRDS(res_voom_spleen, "data/LSS7T8/r_objects/res_voom_spleen.rds")
-saveRDS(res_voom_spleen_annotated, "data/LSS7T8/r_objects/res_voom_spleen_annotated.rds")
+saveRDS(v, "projects/LSS7T8/data/r_objects/voom_spleen.rds")
+saveRDS(res_voom_spleen, "projects/LSS7T8/data/r_objects/res_voom_spleen.rds")
+saveRDS(res_voom_spleen_annotated, "projects/LSS7T8/data/r_objects/res_voom_spleen_annotated.rds")
 # =================================================
 # ---- limma-voom GSVA and fgsea analyses ----
 # =================================================
@@ -251,9 +251,9 @@ saveRDS(res_voom_spleen_annotated, "data/LSS7T8/r_objects/res_voom_spleen_annota
 # ---- Limma FgSEA for LSS7T8 Liver ----
 library(fgsea)
 library(msigdbr)
-res_voom_liver_annotated <- readRDS("data/LSS7T8/r_objects/res_voom_liver_annotated.rds")
+res_voom_liver_annotated <- readRDS("projects/LSS7T8/data/r_objects/res_voom_liver_annotated.rds")
 # Get gene sets (example: Hallmark, human)
-gmt_path <- "data/geneset/mh.all.v2026.1.Mm.symbols.gmt"
+gmt_path <- "genesets/mh.all.v2026.1.Mm.symbols.gmt"
 pathways <- gmtPathways(gmt_path)
 
 
@@ -284,16 +284,16 @@ fgsea_dopc_vs_mock <- run_gsea(res_dopc_vs_mock, pathways)
 fgsea_dopc_vs_cl    <- run_gsea(res_dopc_vs_cl , pathways)
 
 
-saveRDS(fgsea_cl_vs_mock,   "data/LSS7T8/r_objects/fgsea_liver_cl_vs_mock(voom).rds")
-saveRDS(fgsea_dopc_vs_mock, "data/LSS7T8/r_objects/fgsea_liver_dopc_vs_mock(voom).rds")
-saveRDS(fgsea_dopc_vs_cl,   "data/LSS7T8/r_objects/fgsea_liver_dopc_vs_cl(voom).rds")
+saveRDS(fgsea_cl_vs_mock,   "projects/LSS7T8/data/r_objects/fgsea_liver_cl_vs_mock(voom).rds")
+saveRDS(fgsea_dopc_vs_mock, "projects/LSS7T8/data/r_objects/fgsea_liver_dopc_vs_mock(voom).rds")
+saveRDS(fgsea_dopc_vs_cl,   "projects/LSS7T8/data/r_objects/fgsea_liver_dopc_vs_cl(voom).rds")
 
 # ---- Limma FgSEA for LSS7T8 spleen ----
 library(fgsea)
 library(msigdbr)
-res_voom_spleen_annotated <- readRDS("data/LSS7T8/r_objects/res_voom_spleen_annotated.rds")
+res_voom_spleen_annotated <- readRDS("projects/LSS7T8/data/r_objects/res_voom_spleen_annotated.rds")
 # Get gene sets (example: Hallmark, human)
-gmt_path <- "data/geneset/mh.all.v2026.1.Mm.symbols.gmt"
+gmt_path <- "genesets/mh.all.v2026.1.Mm.symbols.gmt"
 pathways <- gmtPathways(gmt_path)
 
 
@@ -324,9 +324,9 @@ fgsea_dopc_vs_mock <- run_gsea(res_dopc_vs_mock, pathways)
 fgsea_dopc_vs_cl    <- run_gsea(res_dopc_vs_cl , pathways)
 
 
-saveRDS(fgsea_cl_vs_mock,   "data/LSS7T8/r_objects/fgsea_spleen_cl_vs_mock(voom).rds")
-saveRDS(fgsea_dopc_vs_mock, "data/LSS7T8/r_objects/fgsea_spleen_dopc_vs_mock(voom).rds")
-saveRDS(fgsea_dopc_vs_cl,   "data/LSS7T8/r_objects/fgsea_spleen_dopc_vs_cl(voom).rds")
+saveRDS(fgsea_cl_vs_mock,   "projects/LSS7T8/data/r_objects/fgsea_spleen_cl_vs_mock(voom).rds")
+saveRDS(fgsea_dopc_vs_mock, "projects/LSS7T8/data/r_objects/fgsea_spleen_dopc_vs_mock(voom).rds")
+saveRDS(fgsea_dopc_vs_cl,   "projects/LSS7T8/data/r_objects/fgsea_spleen_dopc_vs_cl(voom).rds")
 
 
 # ==========================================
@@ -438,16 +438,16 @@ res_shrunk_liver[["treatment_dopc_vs_cl"]] <- DESeq2::lfcShrink(
 )
 
 #Save/load DESeq object
-saveRDS(dds_liver,"data/LSS7T8/r_objects/dds_liver.rds")
-saveRDS(DESeq2::counts(dds_liver, normalized = TRUE), "data/LSS7T8/r_objects/norm_counts_liver.rds")
-saveRDS(res_wald_liver, "data/LSS7T8/r_objects/res_wald_liver.rds")
-saveRDS(res_shrunk_liver, "data/LSS7T8/r_objects/res_shrunk_liver.rds")
+saveRDS(dds_liver,"projects/LSS7T8/data/r_objects/dds_liver.rds")
+saveRDS(DESeq2::counts(dds_liver, normalized = TRUE), "projects/LSS7T8/data/r_objects/norm_counts_liver.rds")
+saveRDS(res_wald_liver, "projects/LSS7T8/data/r_objects/res_wald_liver.rds")
+saveRDS(res_shrunk_liver, "projects/LSS7T8/data/r_objects/res_shrunk_liver.rds")
 
 # -------------- Annotated liver------------
 # Load objects
-dds_liver        <- readRDS("data/LSS7T8/r_objects/dds_liver.rds")
-res_shrunk_liver <- readRDS("data/LSS7T8/r_objects/res_shrunk_liver.rds")
-res_wald_liver   <- readRDS("data/LSS7T8/r_objects/res_wald_liver.rds")
+dds_liver        <- readRDS("projects/LSS7T8/data/r_objects/dds_liver.rds")
+res_shrunk_liver <- readRDS("projects/LSS7T8/data/r_objects/res_shrunk_liver.rds")
+res_wald_liver   <- readRDS("projects/LSS7T8/data/r_objects/res_wald_liver.rds")
 
 all_ensembl_liver <- res_shrunk_liver |>
   purrr::map(~ rownames(.x)) |>
@@ -506,9 +506,9 @@ norm_counts_liver <- norm_counts_liver[order(-rowMeans(norm_counts_liver)), ]
 norm_counts_liver <- norm_counts_liver[!duplicated(rownames(norm_counts_liver)), ]
 
 # Save all
-saveRDS(res_shrunk_liver_annotated, "data/LSS7T8/r_objects/resShrink_liver_annotated.rds")
-saveRDS(res_wald_liver_annotated,   "data/LSS7T8/r_objects/resWald_liver_annotated.rds")
-saveRDS(norm_counts_liver,          "data/LSS7T8/r_objects/norm_counts_liver_symbols.rds")
+saveRDS(res_shrunk_liver_annotated, "projects/LSS7T8/data/r_objects/resShrink_liver_annotated.rds")
+saveRDS(res_wald_liver_annotated,   "projects/LSS7T8/data/r_objects/resWald_liver_annotated.rds")
+saveRDS(norm_counts_liver,          "projects/LSS7T8/data/r_objects/norm_counts_liver_symbols.rds")
 
 
 
@@ -520,7 +520,7 @@ saveRDS(norm_counts_liver,          "data/LSS7T8/r_objects/norm_counts_liver_sym
 # =================================================
 # ---- GSVA for LSS7T8 Liver ----
 # normalized counts with gene symbols as rownames
-norm_counts_liver <- readRDS("data/LSS7T8/r_objects/norm_counts_liver_symbols.rds")
+norm_counts_liver <- readRDS("projects/LSS7T8/data/r_objects/norm_counts_liver_symbols.rds")
 
 # gsva parameters
 gsva_par <- gsvaParam(
@@ -558,17 +558,17 @@ gsva_results_liver <- list(
   dopc_vs_cl      = topTable(fit, coef = "dopc_vs_cl",      n = Inf, sort.by = "p")
 )
 
-saveRDS(gsva_scores_liver,  "data/LSS7T8/r_objects/gsva_scores_liver.rds")
-saveRDS(gsva_results_liver, "data/LSS7T8/r_objects/gsva_results_liver.rds")
+saveRDS(gsva_scores_liver,  "projects/LSS7T8/data/r_objects/gsva_scores_liver.rds")
+saveRDS(gsva_results_liver, "projects/LSS7T8/data/r_objects/gsva_results_liver.rds")
 
 
 # ---- FgSEA for LSS7T8 Liver ----
-res_shrunk_liver_annotated <- readRDS("data/LSS7T8/r_objects/resShrink_liver_annotated.rds")
-res_wald_liver_annotated   <- readRDS("data/LSS7T8/r_objects/resWald_liver_annotated.rds")
+res_shrunk_liver_annotated <- readRDS("projects/LSS7T8/data/r_objects/resShrink_liver_annotated.rds")
+res_wald_liver_annotated   <- readRDS("projects/LSS7T8/data/r_objects/resWald_liver_annotated.rds")
 # Get gene sets (example: Hallmark, human)
-gmt_path <- "data/geneset/mh.all.v2026.1.Mm.symbols.gmt"
+gmt_path <- "genesets/mh.all.v2026.1.Mm.symbols.gmt"
 pathways <- gmtPathways(gmt_path)
-res_wald_liver_annotated <- readRDS("data/LSS7T8/r_objects/resWald_liver_annotated.rds")
+res_wald_liver_annotated <- readRDS("projects/LSS7T8/data/r_objects/resWald_liver_annotated.rds")
 
 # Helper to build ranked list and run fgsea
 run_gsea <- function(tt, pathways, nPermSimple = 10000) {
@@ -597,9 +597,9 @@ fgsea_cl_vs_mock   <- run_gsea(res_cl_vs_mock, pathways)
 fgsea_dopc_vs_mock <- run_gsea(res_dopc_vs_mock, pathways)
 fgsea_dopc_vs_cl    <- run_gsea(res_dopc_vs_cl , pathways)
 
-saveRDS(fgsea_cl_vs_mock,   "data/LSS7T8/r_objects/fgsea_cl_vs_mock.rds")
-saveRDS(fgsea_dopc_vs_mock, "data/LSS7T8/r_objects/fgsea_dopc_vs_mock.rds")
-saveRDS(fgsea_dopc_vs_cl,   "data/LSS7T8/r_objects/fgsea_dopc_vs_cl.rds")
+saveRDS(fgsea_cl_vs_mock,   "projects/LSS7T8/data/r_objects/fgsea_cl_vs_mock.rds")
+saveRDS(fgsea_dopc_vs_mock, "projects/LSS7T8/data/r_objects/fgsea_dopc_vs_mock.rds")
+saveRDS(fgsea_dopc_vs_cl,   "projects/LSS7T8/data/r_objects/fgsea_dopc_vs_cl.rds")
 
 # Tissue check
 
@@ -734,13 +734,13 @@ res_shrunk_spleen[["treatment_dopc_vs_cl"]] <- DESeq2::lfcShrink(
 )
 
 #Save/load DESeq object
-saveRDS(dds_spleen,"data/LSS7T8/r_objects/dds_spleen.rds")
-saveRDS(DESeq2::counts(dds_spleen, normalized = TRUE), "data/LSS7T8/r_objects/norm_counts_spleen.rds")
-saveRDS(res_wald_spleen, "data/LSS7T8/r_objects/res_wald_spleen.rds")
-saveRDS(res_shrunk_spleen, "data/LSS7T8/r_objects/res_shrunk_spleen.rds")
+saveRDS(dds_spleen,"projects/LSS7T8/data/r_objects/dds_spleen.rds")
+saveRDS(DESeq2::counts(dds_spleen, normalized = TRUE), "projects/LSS7T8/data/r_objects/norm_counts_spleen.rds")
+saveRDS(res_wald_spleen, "projects/LSS7T8/data/r_objects/res_wald_spleen.rds")
+saveRDS(res_shrunk_spleen, "projects/LSS7T8/data/r_objects/res_shrunk_spleen.rds")
 
-res_wald_spleen <- readRDS("data/LSS7T8/r_objects/res_wald_spleen.rds")
-res_shrunk_spleen <- readRDS("data/LSS7T8/r_objects/res_shrunk_spleen.rds")
+res_wald_spleen <- readRDS("projects/LSS7T8/data/r_objects/res_wald_spleen.rds")
+res_shrunk_spleen <- readRDS("projects/LSS7T8/data/r_objects/res_shrunk_spleen.rds")
 # ---- Annotated spleen----
 
 all_ensembl_spleen <- res_shrunk_spleen |>
@@ -783,19 +783,19 @@ res_wald_spleen_annotated <- purrr::map(res_wald_spleen, function(df) {
 })
 
 # Save Annotated
-saveRDS(res_shrunk_spleen_annotated, "data/LSS7T8/r_objects/resShrink_spleen_annotated.rds")
-saveRDS(res_wald_spleen_annotated, "data/LSS7T8/r_objects/resWald_spleen_annotated.rds")
+saveRDS(res_shrunk_spleen_annotated, "projects/LSS7T8/data/r_objects/resShrink_spleen_annotated.rds")
+saveRDS(res_wald_spleen_annotated, "projects/LSS7T8/data/r_objects/resWald_spleen_annotated.rds")
 
-res_shrunk_spleen_annotated <- readRDS("data/LSS7T8/r_objects/resShrink_spleen_annotated.rds")
-res_wald_spleen_annotated <- readRDS("data/LSS7T8/r_objects/resWald_spleen_annotated.rds")
+res_shrunk_spleen_annotated <- readRDS("projects/LSS7T8/data/r_objects/resShrink_spleen_annotated.rds")
+res_wald_spleen_annotated <- readRDS("projects/LSS7T8/data/r_objects/resWald_spleen_annotated.rds")
 
 # ---- FgSEA for LSS7T8 Spleen ----
 
 
 # Get gene sets (example: Hallmark, human)
-gmt_path <- "data/geneset/mh.all.v2026.1.Mm.symbols.gmt"
+gmt_path <- "genesets/mh.all.v2026.1.Mm.symbols.gmt"
 pathways <- gmtPathways(gmt_path)
-res_wald_spleen_annotated <- readRDS("data/LSS7T8/r_objects/resWald_spleen_annotated.rds")
+res_wald_spleen_annotated <- readRDS("projects/LSS7T8/data/r_objects/resWald_spleen_annotated.rds")
 
 # Helper to build ranked list and run fgsea
 run_gsea <- function(tt, pathways, nPermSimple = 10000) {
@@ -824,9 +824,9 @@ fgsea_cl_vs_mock   <- run_gsea(res_cl_vs_mock, pathways)
 fgsea_dopc_vs_mock <- run_gsea(res_dopc_vs_mock, pathways)
 fgsea_dopc_vs_cl    <- run_gsea(res_dopc_vs_cl , pathways)
 
-saveRDS(fgsea_cl_vs_mock,   "data/LSS7T8/r_objects/fgsea_cl_vs_mock.rds")
-saveRDS(fgsea_dopc_vs_mock, "data/LSS7T8/r_objects/fgsea_dopc_vs_mock.rds")
-saveRDS(fgsea_dopc_vs_cl,   "data/LSS7T8/r_objects/fgsea_dopc_vs_cl.rds")
+saveRDS(fgsea_cl_vs_mock,   "projects/LSS7T8/data/r_objects/fgsea_cl_vs_mock.rds")
+saveRDS(fgsea_dopc_vs_mock, "projects/LSS7T8/data/r_objects/fgsea_dopc_vs_mock.rds")
+saveRDS(fgsea_dopc_vs_cl,   "projects/LSS7T8/data/r_objects/fgsea_dopc_vs_cl.rds")
 
 # Tissue check
 

@@ -15,16 +15,16 @@ library(tibble)
 library(ggplot2)
 
 # ---- Dataset ----
-gmt_path <- "data/geneset/mh.all.v2026.1.Mm.symbols.gmt"
+gmt_path <- "genesets/mh.all.v2026.1.Mm.symbols.gmt"
 hallmark_sets <- gmtPathways(gmt_path)
 
 # liver Results
-res_shrunk_liver <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_liver_qcmin10_annotated.rds")
-res_wald_liver <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_liver_qcmin10_annotated.rds")
+res_shrunk_liver <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resShrink_liver_qcmin10_annotated.rds")
+res_wald_liver <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resWald_liver_qcmin10_annotated.rds")
 
 # Spleen Results
-res_wald_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_spleen_qcmin10_annotated.rds")
-res_shrunk_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_spleen_qcmin10_annotated.rds")
+res_wald_spleen <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resWald_spleen_qcmin10_annotated.rds")
+res_shrunk_spleen <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resShrink_spleen_qcmin10_annotated.rds")
 
 # ---- GSEA for liver ----
 ranked_list_liver <- res_shrunk_liver %>%
@@ -67,7 +67,7 @@ gsea_results_liver <- map(
   )
 )
 
-saveRDS(gsea_results_liver, "data/KG7RYR/r_objects/gsea_results_liver(signLog_padj).rds")
+saveRDS(gsea_results_liver, "projects/KG7RYR/data/r_objects/gsea_results_liver(signLog_padj).rds")
 # Parse names like
 parse_contrast_liver <- function(comparison) {
   x <- sub("^treatment_", "", comparison)
@@ -154,7 +154,7 @@ gsea_results_spleen <- map(
     stats    = .x
   )
 )
-saveRDS(gsea_results_spleen, "data/KG7RYR/r_objects/gsea_results_spleen(signLog_padj).rds")
+saveRDS(gsea_results_spleen, "projects/KG7RYR/data/r_objects/gsea_results_spleen(signLog_padj).rds")
 
 parse_contrast_spleen <- function(comparison) {
   x <- sub("^treatment_", "", comparison)

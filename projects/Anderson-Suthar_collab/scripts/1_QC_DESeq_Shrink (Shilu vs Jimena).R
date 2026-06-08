@@ -14,7 +14,7 @@ library(uwot)
 ## Shilu's data
 #Import expression matrix in tsv format
 expr_R2SDHF <- read.delim(
-  "data/R2SDHF/Plasmo/R2SDHF-expression-matrix.tsv",
+  "projects/R2SDHF/data/Plasmo/R2SDHF-expression-matrix.tsv",
   check.names = FALSE,
   stringsAsFactors = FALSE
 )
@@ -136,8 +136,8 @@ v_R2SDHF_sym <- v_R2SDHF$E[names(mapped), ]
 rownames(v_R2SDHF_sym) <- mapped
 
 ### Save/load checkpoint
-saveRDS(v_R2SDHF_sym, "data/Anderson-Suthar_collab/Als_org_Jimena/R2SDHF.rds")
-v_R2SDHF_sym <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/R2SDHF.rds")
+saveRDS(v_R2SDHF_sym, "projects/R2SDHF/data/r_objects/R2SDHF.rds")
+v_R2SDHF_sym <- readRDS("projects/R2SDHF/data/r_objects/R2SDHF.rds")
 
 # ---- R2SDHF LIMMA voom analysis ----
 design <- model.matrix(~ 0 + Group, data = meta_R2SDHF)
@@ -172,19 +172,19 @@ res_TX24 <- topTable(fit2, coef = "TX24_vs_Mock", number = Inf)
 res_TX48 <- topTable(fit2, coef = "TX48_vs_Mock", number = Inf)
 res_TX48_vs_TX12 <- topTable(fit2, coef = "TX48_vs_TX12", number = Inf)
 
-saveRDS(fit2, "data/Anderson-Suthar_collab/Als_org_Jimena/fit2(R2SDHF).rds")
-saveRDS(v, "data/Anderson-Suthar_collab/Als_org_Jimena/voom(R2SDHF).rds")
-saveRDS(res_TX12, "data/Anderson-Suthar_collab/r_objects/res_TX12(R2SDHF).rds")
-saveRDS(res_TX24, "data/Anderson-Suthar_collab/r_objects/res_TX24(R2SDHF).rds")
-saveRDS(res_TX48, "data/Anderson-Suthar_collab/r_objects/res_TX48(R2SDHF).rds")
-saveRDS(res_TX48_vs_TX12, "data/Anderson-Suthar_collab/r_objects/res_TX48_vs_TX12(R2SDHF).rds")
+saveRDS(fit2, "projects/R2SDHF/data/r_objects/fit2(R2SDHF).rds")
+saveRDS(v, "projects/R2SDHF/data/r_objects/voom(R2SDHF).rds")
+saveRDS(res_TX12, "projects/R2SDHF/data/r_objects/res_TX12(R2SDHF).rds")
+saveRDS(res_TX24, "projects/R2SDHF/data/r_objects/res_TX24(R2SDHF).rds")
+saveRDS(res_TX48, "projects/R2SDHF/data/r_objects/res_TX48(R2SDHF).rds")
+saveRDS(res_TX48_vs_TX12, "projects/R2SDHF/data/r_objects/res_TX48_vs_TX12(R2SDHF).rds")
 
 # ---- FgSEA for R2SDHF ----
 library(fgsea)
 library(msigdbr)
 
 # Get gene sets (example: Hallmark, human)
-gmt_path <- "data/geneset/h.all.v2025.1.Hs.symbols.gmt"
+gmt_path <- "genesets/h.all.v2025.1.Hs.symbols.gmt"
 pathways <- gmtPathways(gmt_path)
 
 
@@ -210,14 +210,14 @@ fgsea_TX24 <- run_gsea(res_TX24, pathways)
 fgsea_TX48 <- run_gsea(res_TX48, pathways)
 fgsea_TX48_vs_TX12 <- run_gsea(res_TX48_vs_TX12, pathways)
 
-saveRDS(fgsea_TX12, "data/Anderson-Suthar_collab/r_objects/fgsea_TX12_vs_Mock(R2SDHF).rds")
-saveRDS(fgsea_TX24, "data/Anderson-Suthar_collab/r_objects/fgsea_TX24_vs_Mock(R2SDHF).rds")
-saveRDS(fgsea_TX48, "data/Anderson-Suthar_collab/r_objects/fgsea_TX48_vs_Mock(R2SDHF).rds")
-saveRDS(fgsea_TX48_vs_TX12, "data/Anderson-Suthar_collab/r_objects/fgsea_TX48_vs_TX12(R2SDHF).rds")
+saveRDS(fgsea_TX12, "projects/R2SDHF/data/r_objects/fgsea_TX12_vs_Mock(R2SDHF).rds")
+saveRDS(fgsea_TX24, "projects/R2SDHF/data/r_objects/fgsea_TX24_vs_Mock(R2SDHF).rds")
+saveRDS(fgsea_TX48, "projects/R2SDHF/data/r_objects/fgsea_TX48_vs_Mock(R2SDHF).rds")
+saveRDS(fgsea_TX48_vs_TX12, "projects/R2SDHF/data/r_objects/fgsea_TX48_vs_TX12(R2SDHF).rds")
 # ---- Jimina's data ----
 #### Expression matrix
 # Define base path
-base_path <- "data/Anderson-Suthar_collab/Als_org_Jimena"
+base_path <- "projects/Anderson-Suthar_collab/data/Als_org_Jimena"
 
 # Import expression matrix
 expr <- read_excel(
@@ -300,11 +300,11 @@ list(
 )
 
 #Save/load checkpoint
-saveRDS(counts, "data/Anderson-Suthar_collab/Als_org_Jimena/counts(hSpS_Ctrx_batch).rds")
-counts <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/counts(hSpS_Ctrx_batch).rds")
+saveRDS(counts, "projects/Anderson-Suthar_collab/data/Als_org_Jimena/counts(hSpS_Ctrx_batch).rds")
+counts <- readRDS("projects/Anderson-Suthar_collab/data/Als_org_Jimena/counts(hSpS_Ctrx_batch).rds")
 
-saveRDS(meta_filtered, "data/Anderson-Suthar_collab/Als_org_Jimena/meta_filtered(hSpS_Ctrx_batch).rds")
-meta_filtered <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/meta_filtered(hSpS_Ctrx_batch).rds")
+saveRDS(meta_filtered, "projects/Anderson-Suthar_collab/data/Als_org_Jimena/meta_filtered(hSpS_Ctrx_batch).rds")
+meta_filtered <- readRDS("projects/Anderson-Suthar_collab/data/Als_org_Jimena/meta_filtered(hSpS_Ctrx_batch).rds")
 
 table(meta_filtered$Stage, meta_filtered$Line)
 # ---- limma and edgeR set up ----
@@ -355,12 +355,12 @@ res_d75 <- topTable(fit2, coef = "d75_ALS", number = Inf)
 res_d120 <- topTable(fit2, coef = "d120_ALS", number = Inf)
 
 # Save DE results
-saveRDS(fit2, "data/Anderson-Suthar_collab/Als_org_Jimena/fit2(hSpS_Ctrx_batch).rds")
-saveRDS(v, "data/Anderson-Suthar_collab/Als_org_Jimena/voom(hSpS_Ctrx_batch).rds")
-saveRDS(res_d30, "data/Anderson-Suthar_collab/r_objects/res_d30_ALS_vs_Ctrl(Batch).rds")
-saveRDS(res_d50, "data/Anderson-Suthar_collab/r_objects/res_d50_ALS_vs_Ctrl(Batch).rds")
-saveRDS(res_d75, "data/Anderson-Suthar_collab/r_objects/res_d75_ALS_vs_Ctrl(Batch).rds")
-saveRDS(res_d120, "data/Anderson-Suthar_collab/r_objects/res_d120_ALS_vs_Ctrl(Batch).rds")
+saveRDS(fit2, "projects/Anderson-Suthar_collab/data/Als_org_Jimena/fit2(hSpS_Ctrx_batch).rds")
+saveRDS(v, "projects/Anderson-Suthar_collab/data/Als_org_Jimena/voom(hSpS_Ctrx_batch).rds")
+saveRDS(res_d30, "projects/Anderson-Suthar_collab/data/r_objects/res_d30_ALS_vs_Ctrl(Batch).rds")
+saveRDS(res_d50, "projects/Anderson-Suthar_collab/data/r_objects/res_d50_ALS_vs_Ctrl(Batch).rds")
+saveRDS(res_d75, "projects/Anderson-Suthar_collab/data/r_objects/res_d75_ALS_vs_Ctrl(Batch).rds")
+saveRDS(res_d120, "projects/Anderson-Suthar_collab/data/r_objects/res_d120_ALS_vs_Ctrl(Batch).rds")
 
 
 # ---- GSEA ----
@@ -368,7 +368,7 @@ library(fgsea)
 library(msigdbr)
 
 # Get gene sets (example: Hallmark, human)
-gmt_path <- "data/geneset/h.all.v2025.1.Hs.symbols.gmt"
+gmt_path <- "genesets/h.all.v2025.1.Hs.symbols.gmt"
 pathways <- gmtPathways(gmt_path)
 
 
@@ -395,10 +395,10 @@ gsea_d50  <- run_gsea(res_d50, pathways)
 gsea_d75  <- run_gsea(res_d75, pathways)
 gsea_d120 <- run_gsea(res_d120, pathways)
 
-saveRDS(gsea_d30,  "data/Anderson-Suthar_collab/r_objects/fgsea_d30_ALS_vs_Ctrl(Batch).rds")
-saveRDS(gsea_d50,  "data/Anderson-Suthar_collab/r_objects/fgsea_d50_ALS_vs_Ctrl(Batch).rds")
-saveRDS(gsea_d75,  "data/Anderson-Suthar_collab/r_objects/fgsea_d75_ALS_vs_Ctrl(Batch).rds")
-saveRDS(gsea_d120, "data/Anderson-Suthar_collab/r_objects/fgsea_d120_ALS_vs_Ctrl(Batch).rds")
+saveRDS(gsea_d30,  "projects/Anderson-Suthar_collab/data/r_objects/fgsea_d30_ALS_vs_Ctrl(Batch).rds")
+saveRDS(gsea_d50,  "projects/Anderson-Suthar_collab/data/r_objects/fgsea_d50_ALS_vs_Ctrl(Batch).rds")
+saveRDS(gsea_d75,  "projects/Anderson-Suthar_collab/data/r_objects/fgsea_d75_ALS_vs_Ctrl(Batch).rds")
+saveRDS(gsea_d120, "projects/Anderson-Suthar_collab/data/r_objects/fgsea_d120_ALS_vs_Ctrl(Batch).rds")
 # ---- GSEA networks ----
 library(clusterProfiler)
 library(enrichplot)
@@ -406,7 +406,7 @@ library(msigdbr)
 library(org.Hs.eg.db)
 
 # Get Hallmark gene sets formatted for clusterProfiler
-gmt_path <- "data/geneset/h.all.v2025.1.Hs.symbols.gmt"
+gmt_path <- "genesets/h.all.v2025.1.Hs.symbols.gmt"
 pathways <- gmtPathways(gmt_path)
 
 # Convert gmt pathways to t2g format
@@ -435,10 +435,10 @@ cp_d75  <- run_cp_gsea(res_d75, msig_t2g)
 cp_d120 <- run_cp_gsea(res_d120, msig_t2g)
 
 #Save
-saveRDS(cp_d30,  "data/Anderson-Suthar_collab/r_objects/cp_gsea_d30_ALS_vs_Ctrl(Batch).rds")
-saveRDS(cp_d50,  "data/Anderson-Suthar_collab/r_objects/cp_gsea_d50_ALS_vs_Ctrl(Batch).rds")
-saveRDS(cp_d75,  "data/Anderson-Suthar_collab/r_objects/cp_gsea_d75_ALS_vs_Ctrl(Batch).rds")
-saveRDS(cp_d120, "data/Anderson-Suthar_collab/r_objects/cp_gsea_d120_ALS_vs_Ctrl(Batch).rds")
+saveRDS(cp_d30,  "projects/Anderson-Suthar_collab/data/r_objects/cp_gsea_d30_ALS_vs_Ctrl(Batch).rds")
+saveRDS(cp_d50,  "projects/Anderson-Suthar_collab/data/r_objects/cp_gsea_d50_ALS_vs_Ctrl(Batch).rds")
+saveRDS(cp_d75,  "projects/Anderson-Suthar_collab/data/r_objects/cp_gsea_d75_ALS_vs_Ctrl(Batch).rds")
+saveRDS(cp_d120, "projects/Anderson-Suthar_collab/data/r_objects/cp_gsea_d120_ALS_vs_Ctrl(Batch).rds")
 
 # ---- graph Results ----
 library(UpSetR)
@@ -577,8 +577,8 @@ RRHO2_heatmap(rrho_res)
 # ---- old ----
 # ========================
  #Save/load DESeq object
-# saveRDS(dds, "data/R2SDHF/r_objects/plasmo_dds_noMAD.rds")
-dds <- readRDS("data/R2SDHF/r_objects/plasmo_dds_noMAD.rds")
+# saveRDS(dds, "projects/R2SDHF/data/r_objects/plasmo_dds_noMAD.rds")
+dds <- readRDS("projects/R2SDHF/data/r_objects/plasmo_dds_noMAD.rds")
 
 # Normalied reads
 dds <- estimateSizeFactors(dds)
@@ -586,8 +586,8 @@ normalized_counts <- counts(dds, normalized=TRUE)
 
 
 #Save/load Shrunk Data
-saveRDS(res_shrunk_list, "data/R2SDHF/Plasmo_resShrink_noMAD_qcmin10.rds")
-res_shrunk_list <- readRDS("data/R2SDHF/Plasmo_resShrink_noMAD_qcmin10.rds")
+saveRDS(res_shrunk_list, "projects/R2SDHF/data/Plasmo_resShrink_noMAD_qcmin10.rds")
+res_shrunk_list <- readRDS("projects/R2SDHF/data/Plasmo_resShrink_noMAD_qcmin10.rds")
 
 
 # ---- ADD mapping of gene names ----
@@ -628,8 +628,8 @@ res_shrunk_list <- purrr::map(res_shrunk_list, function(df) {
   
 })
 
-saveRDS(res_shrunk_list, "data/R2SDHF/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
-res_shrunk_list <- readRDS("data/R2SDHF/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
+saveRDS(res_shrunk_list, "projects/R2SDHF/data/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
+res_shrunk_list <- readRDS("projects/R2SDHF/data/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
 
 
 

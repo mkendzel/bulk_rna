@@ -7,8 +7,8 @@ library(msigdbr)
 library(openxlsx)
 
 # Load DE results and DESeq2 object
-res_shrunk_list <- readRDS("data/R2SDHF/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
-dds <- readRDS("data/R2SDHF/r_objects/plasmo_dds_noMAD.rds")
+res_shrunk_list <- readRDS("projects/R2SDHF/data/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
+dds <- readRDS("projects/R2SDHF/data/r_objects/plasmo_dds_noMAD.rds")
 
 # You'll need the dds object loaded - adjust path as needed
 # dds <- readRDS("path/to/your/dds.rds")
@@ -144,6 +144,6 @@ for (g in sig_symbols) {
   writeData(wb, sheet_name, df_sum, startRow = gap_row + 1)
 }
 
-outdir <- file.path("figures", "bargraphs", hallmark_name)
+outdir <- file.path("projects/R2SDHF/figures", "bargraphs", hallmark_name)
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 saveWorkbook(wb, file.path(outdir, paste0(hallmark_name, "_counts.xlsx")), overwrite = TRUE)

@@ -7,7 +7,7 @@ library(patchwork)
 
 contrast <- "TX48"
 
-base_dir     <- "data/Anderson-Suthar_collab/r_objects"
+base_dir     <- "projects/Anderson-Suthar_collab/data/r_objects"
 gsea_results <- readRDS(file.path(base_dir, paste0("fgsea_", contrast, "_vs_Mock(R2SDHF).rds")))
 res_results  <- readRDS(file.path(base_dir, paste0("res_", contrast, "(R2SDHF).rds")))
 
@@ -112,7 +112,7 @@ combined <- wrap_plots(plot_list, nrow = 1) +
   plot_annotation(tag_levels = "A")
 
 combined
-ggsave("figures/Shilu_SERVC/WNV48_triple_volcano.png", combined,
+ggsave("projects/R2SDHF/figures/Shilu_SERVC/WNV48_triple_volcano.png", combined,
        width = 16.66, height = 3.83, dpi = 300)
 
 # ---- Triple Volcano: TX48 leading edge genes plotted on ROV48 (R2SDHF) ----
@@ -122,7 +122,7 @@ library(fgsea)
 library(ggrepel)
 library(patchwork)
 
-base_dir <- "data/Anderson-Suthar_collab/r_objects"
+base_dir <- "projects/Anderson-Suthar_collab/data/r_objects"
 
 # Load TX48 GSEA to get leading edge genes
 gsea_tx48 <- readRDS(file.path(base_dir, "fgsea_TX48_vs_Mock(R2SDHF).rds"))
@@ -234,5 +234,5 @@ combined <- wrap_plots(plot_list, nrow = 1) +
 
 combined
 
-ggsave("figures/Shilu_SERVC/ROV48_tx48genes_triple_volcano.png", combined,
+ggsave("projects/R2SDHF/figures/Shilu_SERVC/ROV48_tx48genes_triple_volcano.png", combined,
        width = 16.66, height = 3.83, dpi = 300)

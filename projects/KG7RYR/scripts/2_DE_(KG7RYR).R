@@ -8,8 +8,8 @@ tfnet <- get_dorothea(organism = "mouse", levels = c("A", "B", "C"))
 tfnet <- get_collectri(organism = "mouse", split_complexes = FALSE)
 
 # Full interactive model results
-res_shrunk_list <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_qcmin10_annotated.rds")
-dds <- readRDS("data/KG7RYR/r_objects/plasmo_dds_raw.rds")
+res_shrunk_list <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resShrink_qcmin10_annotated.rds")
+dds <- readRDS("projects/KG7RYR/data/r_objects/plasmo_dds_raw.rds")
 
 coef_names <- DESeq2::resultsNames(dds)[-1]
 # Extract unshrunken results which contain the Wald statistic and p-values
@@ -21,12 +21,12 @@ res_wald_list <- setNames(
 )
 
 # liver Results
-res_shrunk_liver <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_liver_qcmin10_annotated.rds")
-res_wald_liver <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_liver_qcmin10_annotated.rds")
+res_shrunk_liver <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resShrink_liver_qcmin10_annotated.rds")
+res_wald_liver <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resWald_liver_qcmin10_annotated.rds")
 
 # Spleen Results
-res_wald_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_spleen_qcmin10_annotated.rds")
-res_shrunk_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_spleen_qcmin10_annotated.rds")
+res_wald_spleen <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resWald_spleen_qcmin10_annotated.rds")
+res_shrunk_spleen <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resShrink_spleen_qcmin10_annotated.rds")
 
 # =========================================
 # ---- DoRothEA: Transcription factors ----
@@ -65,8 +65,8 @@ tf_results_list <- setNames(
 )
 
 #Save/load
-saveRDS(tf_results_list, "data/KG7RYR/r_objects/tf_results_list.rds")
-tf_results_list <- readRDS("data/KG7RYR/r_objects/tf_results_list.rds")
+saveRDS(tf_results_list, "projects/KG7RYR/data/r_objects/tf_results_list.rds")
+tf_results_list <- readRDS("projects/KG7RYR/data/r_objects/tf_results_list.rds")
 
 tf_results_all <- do.call(rbind, tf_results_list)
 tf_consensus <- tf_results_all[tf_results_all$statistic == "consensus", ]
@@ -117,8 +117,8 @@ tf_results_liver <- setNames(
   coef_names_liver
 )
 #Save
-saveRDS(tf_results_liver, "data/KG7RYR/r_objects/tf_results_liver.rds")
-tf_results_liver <- readRDS("data/KG7RYR/r_objects/tf_results_liver.rds")
+saveRDS(tf_results_liver, "projects/KG7RYR/data/r_objects/tf_results_liver.rds")
+tf_results_liver <- readRDS("projects/KG7RYR/data/r_objects/tf_results_liver.rds")
 
 
 lapply(names(tf_results_liver), function(coef_name) {
@@ -171,8 +171,8 @@ tf_results_spleen <- setNames(
 )
 
 #
-saveRDS(tf_results_spleen, "data/KG7RYR/r_objects/tf_results_spleen.rds")
-tf_results_spleen <- readRDS("data/KG7RYR/r_objects/tf_results_spleen.rds")
+saveRDS(tf_results_spleen, "projects/KG7RYR/data/r_objects/tf_results_spleen.rds")
+tf_results_spleen <- readRDS("projects/KG7RYR/data/r_objects/tf_results_spleen.rds")
 
 lapply(names(tf_results_spleen), function(coef_name) {
   tf <- tf_results_spleen[[coef_name]]
@@ -208,7 +208,7 @@ for (tissue in names(tissues)) {
     df <- tissues[[tissue]][[comp]]
     df$padj <- p.adjust(df$p_value, method = "BH")
     sig <- df[df$padj < 0.05 & !is.na(df$padj), ]
-    filename <- file.path("data", "KG7RYR", paste0(tissue, "_", comparisons[comp], ".xlsx"))
+    filename <- file.path("projects/KG7RYR/data", paste0(tissue, "_", comparisons[comp], ".xlsx"))
     write.xlsx(sig, file = filename)
   }
 }

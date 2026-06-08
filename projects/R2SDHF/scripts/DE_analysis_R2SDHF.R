@@ -5,7 +5,7 @@ library(org.Hs.eg.db)
 library(AnnotationDbi)
 # Import expression matrix
 expr_R2SDHF <- read.delim(
-  "data/R2SDHF/Plasmo/R2SDHF-expression-matrix.tsv",
+  "projects/R2SDHF/data/Plasmo/R2SDHF-expression-matrix.tsv",
   check.names = FALSE,
   stringsAsFactors = FALSE
 )
@@ -124,8 +124,8 @@ res_ROV12 <- topTable(fit2, coef = "ROV12_vs_Mock", number = Inf)
 res_ROV24 <- topTable(fit2, coef = "ROV24_vs_Mock", number = Inf)
 res_ROV48 <- topTable(fit2, coef = "ROV48_vs_Mock", number = Inf)
 
-saveRDS(fit2, "data/Anderson-Suthar_collab/Als_org_Jimena/fit2(R2SDHF).rds")
-saveRDS(v, "data/Anderson-Suthar_collab/Als_org_Jimena/voom(R2SDHF).rds")
-saveRDS(res_ROV12, "data/Anderson-Suthar_collab/r_objects/res_ROV12(R2SDHF).rds")
-saveRDS(res_ROV24, "data/Anderson-Suthar_collab/r_objects/res_ROV24(R2SDHF).rds")
-saveRDS(res_ROV48, "data/Anderson-Suthar_collab/r_objects/res_ROV48(R2SDHF).rds")
+saveRDS(fit2, "projects/R2SDHF/data/r_objects/fit2(R2SDHF).rds")
+saveRDS(v, "projects/R2SDHF/data/r_objects/voom(R2SDHF).rds")
+saveRDS(res_ROV12, "projects/R2SDHF/data/r_objects/res_ROV12(R2SDHF).rds")
+saveRDS(res_ROV24, "projects/R2SDHF/data/r_objects/res_ROV24(R2SDHF).rds")
+saveRDS(res_ROV48, "projects/R2SDHF/data/r_objects/res_ROV48(R2SDHF).rds")

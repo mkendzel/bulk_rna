@@ -17,7 +17,7 @@ library(GSEABase)
 
 #Import expression matrix in tsv format
 expr <- read.delim(
-  "data/KG7RYR/Plasmo_results/KG7RYR-expression-matrix.tsv",
+  "projects/KG7RYR/data/Plasmo_results/KG7RYR-expression-matrix.tsv",
   check.names = FALSE,
   stringsAsFactors = FALSE
 )
@@ -102,8 +102,8 @@ counts <- counts[, colnames(counts) != "cl_spleen_6"] # CS12
 counts <- counts[, colnames(counts) != "d_spleen_9"] # DS18
 
 #Save/load checkpoint
-saveRDS(counts, "data/KG7RYR/r_objects/plasmo_counts(no_CS12_DS18).rds")
-counts <- readRDS("data/KG7RYR/r_objects/plasmo_counts(no_CS12_DS18).rds")
+saveRDS(counts, "projects/KG7RYR/data/r_objects/plasmo_counts(no_CS12_DS18).rds")
+counts <- readRDS("projects/KG7RYR/data/r_objects/plasmo_counts(no_CS12_DS18).rds")
 
 # Parse sample metadata from column names
 sample_info <- data.frame(
@@ -172,18 +172,18 @@ DESeq2::plotMA(res, ylim = c(-5, 5))
 
 
 #Save/load DESeq object
-saveRDS(dds, "data/KG7RYR/r_objects/plasmo_dds_raw.rds")
-dds <- readRDS("data/KG7RYR/r_objects/plasmo_dds_raw.rds")
+saveRDS(dds, "projects/KG7RYR/data/r_objects/plasmo_dds_raw.rds")
+dds <- readRDS("projects/KG7RYR/data/r_objects/plasmo_dds_raw.rds")
 
 # Normalied reads
 dds_norm <- estimateSizeFactors(dds)
 normalized_counts <- counts(dds_norm, normalized = TRUE)
 
-saveRDS(normalized_counts, "data/KG7RYR/r_objects/plasmo_counts_normalized.rds")
+saveRDS(normalized_counts, "projects/KG7RYR/data/r_objects/plasmo_counts_normalized.rds")
 
 #Save/load Shrunk Data
-saveRDS(res_shrunk_list, "data/KG7RYR/r_objects/plasmo_resShrink_qcmin10.rds")
-res_shrunk_list <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_qcmin10.rds")
+saveRDS(res_shrunk_list, "projects/KG7RYR/data/r_objects/plasmo_resShrink_qcmin10.rds")
+res_shrunk_list <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resShrink_qcmin10.rds")
 
 
 # Annotate genes to symbol id
@@ -223,8 +223,8 @@ res_shrunk_list <- purrr::map(res_shrunk_list, function(df) {
 })
 
 # Save and load annotated list
-saveRDS(res_shrunk_list, "data/KG7RYR/r_objects/plasmo_resShrink_qcmin10_annotated.rds")
-res_shrunk_list <- readRDS("data/KG7RYR/Plasmo/plasmo_resShrink_qcmin10_annotated.rds")
+saveRDS(res_shrunk_list, "projects/KG7RYR/data/r_objects/plasmo_resShrink_qcmin10_annotated.rds")
+res_shrunk_list <- readRDS("projects/KG7RYR/data/Plasmo/plasmo_resShrink_qcmin10_annotated.rds")
 
 
 # ==================================
@@ -278,17 +278,17 @@ res_liver <- DESeq2::results(dds_liver)
 DESeq2::plotMA(res_liver, ylim = c(-5, 5))
 
 #Save/load DESeq object
-saveRDS(dds_liver, "data/KG7RYR/r_objects/plasmo_dds_liver_raw.rds")
-dds_liver <- readRDS("data/KG7RYR/r_objects/plasmo_dds_liver_raw.rds")
+saveRDS(dds_liver, "projects/KG7RYR/data/r_objects/plasmo_dds_liver_raw.rds")
+dds_liver <- readRDS("projects/KG7RYR/data/r_objects/plasmo_dds_liver_raw.rds")
 
-saveRDS(counts(dds_liver, normalized = TRUE), "data/KG7RYR/r_objects/plasmo_counts_liver_normalized.rds")
-normalized_counts_liver <- readRDS("data/KG7RYR/r_objects/plasmo_counts_liver_normalized.rds")
+saveRDS(counts(dds_liver, normalized = TRUE), "projects/KG7RYR/data/r_objects/plasmo_counts_liver_normalized.rds")
+normalized_counts_liver <- readRDS("projects/KG7RYR/data/r_objects/plasmo_counts_liver_normalized.rds")
 
-saveRDS(res_shrunk_liver, "data/KG7RYR/r_objects/plasmo_resShrink_liver_qcmin10.rds")
-res_shrunk_liver <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_liver_qcmin10.rds")
+saveRDS(res_shrunk_liver, "projects/KG7RYR/data/r_objects/plasmo_resShrink_liver_qcmin10.rds")
+res_shrunk_liver <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resShrink_liver_qcmin10.rds")
 
-saveRDS(res_wald_liver, "data/KG7RYR/r_objects/plasmo_resWald_liver_qcmin10.rds")
-res_wald_liver <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_liver_qcmin10.rds")
+saveRDS(res_wald_liver, "projects/KG7RYR/data/r_objects/plasmo_resWald_liver_qcmin10.rds")
+res_wald_liver <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resWald_liver_qcmin10.rds")
 
 # Annotated object
 all_ensembl_liver <- res_shrunk_liver |>
@@ -331,11 +331,11 @@ res_wald_liver <- purrr::map(res_wald_liver, function(df) {
 })
 
 # Save Annotated
-saveRDS(res_shrunk_liver, "data/KG7RYR/r_objects/plasmo_resShrink_liver_qcmin10_annotated.rds")
-saveRDS(res_wald_liver, "data/KG7RYR/r_objects/plasmo_resWald_liver_qcmin10_annotated.rds")
+saveRDS(res_shrunk_liver, "projects/KG7RYR/data/r_objects/plasmo_resShrink_liver_qcmin10_annotated.rds")
+saveRDS(res_wald_liver, "projects/KG7RYR/data/r_objects/plasmo_resWald_liver_qcmin10_annotated.rds")
 
-res_shrunk_liver <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_liver_qcmin10_annotated.rds")
-res_wald_liver <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_liver_qcmin10_annotated.rds")
+res_shrunk_liver <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resShrink_liver_qcmin10_annotated.rds")
+res_wald_liver <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resWald_liver_qcmin10_annotated.rds")
 
 # Tissue check
 
@@ -412,17 +412,17 @@ res_spleen <- DESeq2::results(dds_spleen)
 DESeq2::plotMA(res_spleen, ylim = c(-5, 5))
 
 #Save and load checkpoints
-saveRDS(dds_spleen, "data/KG7RYR/r_objects/plasmo_dds_spleen_raw.rds")
-dds_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_dds_spleen_raw.rds")
+saveRDS(dds_spleen, "projects/KG7RYR/data/r_objects/plasmo_dds_spleen_raw.rds")
+dds_spleen <- readRDS("projects/KG7RYR/data/r_objects/plasmo_dds_spleen_raw.rds")
 
-saveRDS(counts(dds_spleen, normalized = TRUE), "data/KG7RYR/r_objects/plasmo_counts_spleen_normalized.rds")
-normalized_counts_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_counts_spleen_normalized.rds")
+saveRDS(counts(dds_spleen, normalized = TRUE), "projects/KG7RYR/data/r_objects/plasmo_counts_spleen_normalized.rds")
+normalized_counts_spleen <- readRDS("projects/KG7RYR/data/r_objects/plasmo_counts_spleen_normalized.rds")
 
-saveRDS(res_shrunk_spleen, "data/KG7RYR/r_objects/plasmo_resShrink_spleen_qcmin10.rds")
-res_shrunk_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_spleen_qcmin10.rds")
+saveRDS(res_shrunk_spleen, "projects/KG7RYR/data/r_objects/plasmo_resShrink_spleen_qcmin10.rds")
+res_shrunk_spleen <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resShrink_spleen_qcmin10.rds")
 
-saveRDS(res_wald_spleen, "data/KG7RYR/r_objects/plasmo_resWald_spleen_qcmin10.rds")
-res_wald_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_spleen_qcmin10.rds")
+saveRDS(res_wald_spleen, "projects/KG7RYR/data/r_objects/plasmo_resWald_spleen_qcmin10.rds")
+res_wald_spleen <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resWald_spleen_qcmin10.rds")
 
 #Annotated
 
@@ -466,11 +466,11 @@ res_wald_spleen <- purrr::map(res_wald_spleen, function(df) {
 })
 
 # save/load
-saveRDS(res_shrunk_spleen, "data/KG7RYR/r_objects/plasmo_resShrink_spleen_qcmin10_annotated.rds")
-saveRDS(res_wald_spleen, "data/KG7RYR/r_objects/plasmo_resWald_spleen_qcmin10_annotated.rds")
+saveRDS(res_shrunk_spleen, "projects/KG7RYR/data/r_objects/plasmo_resShrink_spleen_qcmin10_annotated.rds")
+saveRDS(res_wald_spleen, "projects/KG7RYR/data/r_objects/plasmo_resWald_spleen_qcmin10_annotated.rds")
 
-res_wald_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resWald_spleen_qcmin10_annotated.rds")
-res_shrunk_spleen <- readRDS("data/KG7RYR/r_objects/plasmo_resShrink_spleen_qcmin10_annotated.rds")
+res_wald_spleen <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resWald_spleen_qcmin10_annotated.rds")
+res_shrunk_spleen <- readRDS("projects/KG7RYR/data/r_objects/plasmo_resShrink_spleen_qcmin10_annotated.rds")
 
 
 # Tissue check

@@ -228,7 +228,7 @@ library(scales)
 tfnet <- get_collectri(organism = "mouse", split_complexes = FALSE)
 
 # Load TF results
-tf_results_liver <- readRDS("data/KG7RYR/r_objects/tf_results_liver.rds")
+tf_results_liver <- readRDS("projects/KG7RYR/data/r_objects/tf_results_liver.rds")
 
 # Pick a contrast
 coef_name <- names(tf_results_liver)[2]
@@ -281,7 +281,7 @@ tf_res$padj <- p.adjust(tf_res$p_value, method = "BH")
 tf_sig <- tf_res[tf_res$padj < 0.05, ]
 tf_sig <- tf_sig[order(abs(tf_sig$score), decreasing = TRUE), ]
 print(tf_sig, n = nrow(tf_sig))
-tf_results_spleen <- readRDS("data/KG7RYR/r_objects/tf_results_spleen.rds")
+tf_results_spleen <- readRDS("projects/KG7RYR/data/r_objects/tf_results_spleen.rds")
 
 coef_name <- names(tf_results_spleen)[1]
 tf_res <- tf_results_liver[[coef_name]]
@@ -292,4 +292,4 @@ tf_sig <- tf_sig[order(abs(tf_sig$score), decreasing = TRUE), ]
 print(tf_sig, n = nrow(tf_sig))
 
 library(writexl)
-write_xlsx(tf_sig, paste0("data/tf_significant_", coef_name, ".xlsx"))
+write_xlsx(tf_sig, paste0("projects/KG7RYR/data/tf_significant_", coef_name, ".xlsx"))

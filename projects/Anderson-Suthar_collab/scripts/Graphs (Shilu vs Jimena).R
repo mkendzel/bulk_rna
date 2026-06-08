@@ -1,9 +1,9 @@
 # ---- Jimena DE list ----
 library(openxlsx)
-res_d30 <- readRDS("data/Anderson-Suthar_collab/r_objects/res_d30_ALS_vs_Ctrl(Batch).rds")
-res_d50 <- readRDS("data/Anderson-Suthar_collab/r_objects/res_d50_ALS_vs_Ctrl(Batch).rds")
-res_d75 <- readRDS("data/Anderson-Suthar_collab/r_objects/res_d75_ALS_vs_Ctrl(Batch).rds")
-res_d120 <- readRDS("data/Anderson-Suthar_collab/r_objects/res_d120_ALS_vs_Ctrl(Batch).rds")
+res_d30 <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/res_d30_ALS_vs_Ctrl(Batch).rds")
+res_d50 <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/res_d50_ALS_vs_Ctrl(Batch).rds")
+res_d75 <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/res_d75_ALS_vs_Ctrl(Batch).rds")
+res_d120 <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/res_d120_ALS_vs_Ctrl(Batch).rds")
 
 sig_d30 <- res_d30[res_d30$adj.P.Val < 0.05 & abs(res_d30$logFC) > 1, ]
 sig_d50 <- res_d50[res_d50$adj.P.Val < 0.05 & abs(res_d50$logFC) > 1, ]
@@ -23,16 +23,16 @@ lapply(names(stages), function(s) {
   writeData(wb, "Full DE list", stages[[s]]$full, rowNames = TRUE)
   addWorksheet(wb, "p<0.05 & logFC >1")
   writeData(wb, "p<0.05 & logFC >1", stages[[s]]$sig, rowNames = TRUE)
-  saveWorkbook(wb, sprintf("data/Anderson-Suthar_collab/DE_%s_ALS_vs_Ctrl.xlsx", s), overwrite = TRUE)
+  saveWorkbook(wb, sprintf("projects/Anderson-Suthar_collab/data/DE_%s_ALS_vs_Ctrl.xlsx", s), overwrite = TRUE)
 })
 # ---- GSEA graphs ----
 library(ggplot2)
 library(dplyr)
 
-gsea_d30  <- readRDS("data/Anderson-Suthar_collab/r_objects/fgsea_d30_ALS_vs_Ctrl(Batch).rds")
-gsea_d50  <- readRDS("data/Anderson-Suthar_collab/r_objects/fgsea_d50_ALS_vs_Ctrl(Batch).rds")
-gsea_d75  <- readRDS("data/Anderson-Suthar_collab/r_objects/fgsea_d75_ALS_vs_Ctrl(Batch).rds")
-gsea_d120 <- readRDS("data/Anderson-Suthar_collab/r_objects/fgsea_d120_ALS_vs_Ctrl(Batch).rds")
+gsea_d30  <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/fgsea_d30_ALS_vs_Ctrl(Batch).rds")
+gsea_d50  <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/fgsea_d50_ALS_vs_Ctrl(Batch).rds")
+gsea_d75  <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/fgsea_d75_ALS_vs_Ctrl(Batch).rds")
+gsea_d120 <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/fgsea_d120_ALS_vs_Ctrl(Batch).rds")
 # Helper to prep fgsea results for plotting
 prep_gsea_plot <- function(gsea_res, padj_cutoff = 0.05) {
   gsea_res %>%
@@ -84,10 +84,10 @@ p_d75  <- plot_gsea(gsea_d75,  "GSEA - Up & Down Pathways (d75)")
 p_d120 <- plot_gsea(gsea_d120, "GSEA - Up & Down Pathways (d120)")
 
 # Save
-ggsave("figures/Shilu's vs Jimena/GSEA_d30(Batch).pdf", p_d30, width = 8, height = 6)
-ggsave("figures/Shilu's vs Jimena/GSEA_d50(Batch).pdf", p_d50, width = 8, height = 6)
-ggsave("figures/Shilu's vs Jimena/GSEA_d75(Batch).pdf", p_d75, width = 8, height = 6)
-ggsave("figures/Shilu's vs Jimena/GSEA_d120(Batch).pdf", p_d120, width = 8, height = 6)
+ggsave("projects/Anderson-Suthar_collab/figures/Shilu's vs Jimena/GSEA_d30(Batch).pdf", p_d30, width = 8, height = 6)
+ggsave("projects/Anderson-Suthar_collab/figures/Shilu's vs Jimena/GSEA_d50(Batch).pdf", p_d50, width = 8, height = 6)
+ggsave("projects/Anderson-Suthar_collab/figures/Shilu's vs Jimena/GSEA_d75(Batch).pdf", p_d75, width = 8, height = 6)
+ggsave("projects/Anderson-Suthar_collab/figures/Shilu's vs Jimena/GSEA_d120(Batch).pdf", p_d120, width = 8, height = 6)
 
 # ---- Network activity of GSEA ----
 
@@ -99,15 +99,15 @@ library(clusterProfiler)
 
 # Data
 
-cp_d30  <- readRDS("data/Anderson-Suthar_collab/r_objects/cp_gsea_d30_ALS_vs_Ctrl(Batch).rds")
-cp_d50  <- readRDS("data/Anderson-Suthar_collab/r_objects/cp_gsea_d50_ALS_vs_Ctrl(Batch).rds")
-cp_d75  <- readRDS("data/Anderson-Suthar_collab/r_objects/cp_gsea_d75_ALS_vs_Ctrl(Batch).rds")
-cp_d120 <- readRDS("data/Anderson-Suthar_collab/r_objects/cp_gsea_d120_ALS_vs_Ctrl(Batch).rds")
+cp_d30  <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/cp_gsea_d30_ALS_vs_Ctrl(Batch).rds")
+cp_d50  <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/cp_gsea_d50_ALS_vs_Ctrl(Batch).rds")
+cp_d75  <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/cp_gsea_d75_ALS_vs_Ctrl(Batch).rds")
+cp_d120 <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/cp_gsea_d120_ALS_vs_Ctrl(Batch).rds")
 
-res_d30  <- readRDS("data/Anderson-Suthar_collab/r_objects/res_d30_ALS_vs_Ctrl(Batch).rds")
-res_d50  <- readRDS("data/Anderson-Suthar_collab/r_objects/res_d50_ALS_vs_Ctrl(Batch).rds")
-res_d75  <- readRDS("data/Anderson-Suthar_collab/r_objects/res_d75_ALS_vs_Ctrl(Batch).rds")
-res_d120 <- readRDS("data/Anderson-Suthar_collab/r_objects/res_d120_ALS_vs_Ctrl(Batch).rds")
+res_d30  <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/res_d30_ALS_vs_Ctrl(Batch).rds")
+res_d50  <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/res_d50_ALS_vs_Ctrl(Batch).rds")
+res_d75  <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/res_d75_ALS_vs_Ctrl(Batch).rds")
+res_d120 <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/res_d120_ALS_vs_Ctrl(Batch).rds")
 
 #plot function
 
@@ -183,13 +183,13 @@ plot_cnet <- function(cp_res, tt, title, show = 5,
 
 # Run and save all four
 plot_cnet(cp_d30,  res_d30,  "GSEA Network (d30 - ALS vs Control)",
-          filename = "figures/Shilu's vs Jimena/cnet_d30(Batch).pdf")
+          filename = "projects/Anderson-Suthar_collab/figures/Shilu's vs Jimena/cnet_d30(Batch).pdf")
 plot_cnet(cp_d50,  res_d50,  "GSEA Network (d50 - ALS vs Control)",
-          filename = "figures/Shilu's vs Jimena/cnet_d50(Batch).pdf")
+          filename = "projects/Anderson-Suthar_collab/figures/Shilu's vs Jimena/cnet_d50(Batch).pdf")
 plot_cnet(cp_d75,  res_d75,  "GSEA Network (d75 - ALS vs Control)",
-          filename = "figures/Shilu's vs Jimena/cnet_d75(Batch).pdf")
+          filename = "projects/Anderson-Suthar_collab/figures/Shilu's vs Jimena/cnet_d75(Batch).pdf")
 plot_cnet(cp_d120, res_d120, "GSEA Network (d120 - ALS vs Control)",
-          filename = "figures/Shilu's vs Jimena/cnet_d120(Batch).pdf")
+          filename = "projects/Anderson-Suthar_collab/figures/Shilu's vs Jimena/cnet_d120(Batch).pdf")
 
 # ---- Hallmark IFN-α Response Over Time ----
 
@@ -199,8 +199,8 @@ library(ggplot2)
 library(dplyr)
 
 # Load saved objects
-v <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/voom(hSpS_Ctrx_batch).rds")
-meta_filtered <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/meta_filtered(hSpS_Ctrx_batch).rds")
+v <- readRDS("projects/Anderson-Suthar_collab/data/Als_org_Jimena/voom(hSpS_Ctrx_batch).rds")
+meta_filtered <- readRDS("projects/Anderson-Suthar_collab/data/Als_org_Jimena/meta_filtered(hSpS_Ctrx_batch).rds")
 
 # Extract log-CPM normalized expression matrix
 norm_mat <- v$E
@@ -257,8 +257,8 @@ library(dplyr)
 library(tidyr)
 
 # Load saved objects
-v <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/voom(hSpS_Ctrx_batch).rds")
-meta_filtered <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/meta_filtered(hSpS_Ctrx_batch).rds")
+v <- readRDS("projects/Anderson-Suthar_collab/data/Als_org_Jimena/voom(hSpS_Ctrx_batch).rds")
+meta_filtered <- readRDS("projects/Anderson-Suthar_collab/data/Als_org_Jimena/meta_filtered(hSpS_Ctrx_batch).rds")
 
 # Extract log-CPM normalized expression matrix
 norm_mat <- v$E
@@ -333,14 +333,14 @@ library(dplyr)
 library(tidyr)
 
 # Load saved objects
-v <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/voom(hSpS_Ctrx_batch).rds")
-meta_filtered <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/meta_filtered(hSpS_Ctrx_batch).rds")
-fit2 <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/fit2(hSpS_Ctrx_batch).rds")
+v <- readRDS("projects/Anderson-Suthar_collab/data/Als_org_Jimena/voom(hSpS_Ctrx_batch).rds")
+meta_filtered <- readRDS("projects/Anderson-Suthar_collab/data/Als_org_Jimena/meta_filtered(hSpS_Ctrx_batch).rds")
+fit2 <- readRDS("projects/Anderson-Suthar_collab/data/Als_org_Jimena/fit2(hSpS_Ctrx_batch).rds")
 
-gsea_d30  <- readRDS("data/Anderson-Suthar_collab/r_objects/fgsea_d30_ALS_vs_Ctrl(Batch).rds")
-gsea_d50  <- readRDS("data/Anderson-Suthar_collab/r_objects/fgsea_d50_ALS_vs_Ctrl(Batch).rds")
-gsea_d75  <- readRDS("data/Anderson-Suthar_collab/r_objects/fgsea_d75_ALS_vs_Ctrl(Batch).rds")
-gsea_d120 <- readRDS("data/Anderson-Suthar_collab/r_objects/fgsea_d120_ALS_vs_Ctrl(Batch).rds")
+gsea_d30  <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/fgsea_d30_ALS_vs_Ctrl(Batch).rds")
+gsea_d50  <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/fgsea_d50_ALS_vs_Ctrl(Batch).rds")
+gsea_d75  <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/fgsea_d75_ALS_vs_Ctrl(Batch).rds")
+gsea_d120 <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/fgsea_d120_ALS_vs_Ctrl(Batch).rds")
 
 # Remove batch and sex effects from expression matrix
 norm_mat <- removeBatchEffect(v$E,
@@ -443,7 +443,7 @@ ggplot(summary_df, aes(x = Stage, y = mean_score, color = Line, group = Line)) +
   scale_color_manual(values = c("control" = "#2171B5", "ALS" = "#E66101"))
 
 ggsave(
-  filename = "figures/Shilu's vs Jimena/hallmark_pathway_scores_over_time.pdf",
+  filename = "projects/Anderson-Suthar_collab/figures/Shilu's vs Jimena/hallmark_pathway_scores_over_time.pdf",
   width = 16,
   height = 5,
   dpi = 300
@@ -647,7 +647,7 @@ ht <- Heatmap(mat_z,
               heatmap_legend_param = list(title = "Z-score"))
 
 # Save to PDF
-pdf("figures/Shilu's vs Jimena/isg_neuronal_heatmap.pdf", width = 14, height = 10)
+pdf("projects/Anderson-Suthar_collab/figures/Shilu's vs Jimena/isg_neuronal_heatmap.pdf", width = 14, height = 10)
 draw(ht, column_title = "ISG & Neuronal Marker Expression — ALS vs Control",
      column_title_gp = gpar(fontsize = 14, fontface = "bold"))
 dev.off()
@@ -769,7 +769,7 @@ ggplot(summary_df, aes(x = Stage, y = mean_score, color = Line, group = Line)) +
   scale_color_manual(values = c("control" = "#2171B5", "ALS" = "#E66101"))
 
 ggsave(
-  filename = "figures/Shilu's vs Jimena/gobp_neuronal_ssgsea_over_time.pdf",
+  filename = "projects/Anderson-Suthar_collab/figures/Shilu's vs Jimena/gobp_neuronal_ssgsea_over_time.pdf",
   width = 16,
   height = 5,
   dpi = 300
@@ -779,9 +779,9 @@ library(tidyverse)
 library(ggrepel)
 library(patchwork)
 
-gsea_d120 <- readRDS("data/Anderson-Suthar_collab/r_objects/fgsea_d120_ALS_vs_Ctrl(Batch).rds")
+gsea_d120 <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/fgsea_d120_ALS_vs_Ctrl(Batch).rds")
 # Load your per-stage limma results
-res_d120 <- readRDS("data/Anderson-Suthar_collab/r_objects/res_d120_ALS_vs_Ctrl(Batch).rds")
+res_d120 <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/res_d120_ALS_vs_Ctrl(Batch).rds")
 
 # Panel 1: Lollipop bubble plot of significant hallmark pathways ---
 
@@ -873,7 +873,7 @@ combined <- p1 + p2 +
   plot_annotation(tag_levels = "A")
 
 combined
-ggsave("figures/Shilu's vs Jimena/d120_volcano.pdf", p2, width = 7, height = 5, dpi = 300)
+ggsave("projects/Anderson-Suthar_collab/figures/Shilu's vs Jimena/d120_volcano.pdf", p2, width = 7, height = 5, dpi = 300)
 
 # ---- Generalizable GSEA and Volcano Jimena----
 # -- User parameters
@@ -885,7 +885,7 @@ pval_cutoff   <- 0.05
 b_title       <- "Oxidative Phosphorylation Genes"
 
 # -- Load data 
-base_dir     <- "data/Anderson-Suthar_collab/r_objects"
+base_dir     <- "projects/Anderson-Suthar_collab/data/r_objects"
 gsea_results <- readRDS(file.path(base_dir, paste0("fgsea_", day_label, "_", comparison, ".rds")))
 res_results  <- readRDS(file.path(base_dir, paste0("res_", day_label, "_", comparison, ".rds")))
 
@@ -984,7 +984,7 @@ combined <- p1 + p2 +
   plot_annotation(tag_levels = "A")
 
 combined
-ggsave("figures/Shilu's vs Jimena/d120_volcano.pdf", p2, width = 7, height = 5, dpi = 300)
+ggsave("projects/Anderson-Suthar_collab/figures/Shilu's vs Jimena/d120_volcano.pdf", p2, width = 7, height = 5, dpi = 300)
 ####
 
 
@@ -1001,7 +1001,7 @@ als_day       <- "d120"
 als_comparison <- "ALS_vs_Ctrl(Batch)"
 
 # -- Load data 
-base_dir     <- "data/Anderson-Suthar_collab/r_objects"
+base_dir     <- "projects/Anderson-Suthar_collab/data/r_objects"
 gsea_results <- readRDS(file.path(base_dir, paste0("fgsea_", contrast, "_vs_Mock(R2SDHF).rds")))
 res_results  <- readRDS(file.path(base_dir, paste0("res_", contrast, "(R2SDHF).rds")))
 
@@ -1109,7 +1109,7 @@ pval_cutoff   <- 0.05
 n_labels      <- 25
 
 # ── Load data ────────────────────────────────────────────────────────────────
-base_dir     <- "data/Anderson-Suthar_collab/r_objects"
+base_dir     <- "projects/Anderson-Suthar_collab/data/r_objects"
 gsea_results <- readRDS(file.path(base_dir, paste0("fgsea_", contrast, "_vs_Mock(R2SDHF).rds")))
 res_results  <- readRDS(file.path(base_dir, paste0("res_", contrast, "(R2SDHF).rds")))
 
@@ -1213,14 +1213,14 @@ combined <- p1 + p2 +
   plot_annotation(tag_levels = "A")
 
 combined
-ggsave("figures/Shilu's vs Jimena/WNV24_gsea_volcano.pdf",combined, width = 14, height = 5, dpi = 300)
+ggsave("projects/Anderson-Suthar_collab/figures/Shilu's vs Jimena/WNV24_gsea_volcano.pdf",combined, width = 14, height = 5, dpi = 300)
 # ---- Innate Heatmap ----
 library(tidyverse)
 library(pheatmap)
 
-gsea_d120 <- readRDS("data/Anderson-Suthar_collab/r_objects/fgsea_d120_ALS_vs_Ctrl(Batch).rds")
-v <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/voom(hSpS_Ctrx_batch).rds")
-meta_filtered <- readRDS("data/Anderson-Suthar_collab/Als_org_Jimena/meta_filtered(hSpS_Ctrx_batch).rds")
+gsea_d120 <- readRDS("projects/Anderson-Suthar_collab/data/r_objects/fgsea_d120_ALS_vs_Ctrl(Batch).rds")
+v <- readRDS("projects/Anderson-Suthar_collab/data/Als_org_Jimena/voom(hSpS_Ctrx_batch).rds")
+meta_filtered <- readRDS("projects/Anderson-Suthar_collab/data/Als_org_Jimena/meta_filtered(hSpS_Ctrx_batch).rds")
 
 # Get innate immunity leading edge genes
 innate_paths <- gsea_d120 %>%
