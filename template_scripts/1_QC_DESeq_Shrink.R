@@ -6,26 +6,27 @@ library(ggvenn)
 library(grid)
 library(readxl)
 # ----- Import data ----
-## Shilu's data
-#Import expression matrix in tsv format
+## Primary import: expression matrix (TSV)
+# EDIT: point this at your project's expression matrix
 expr <- read.delim(
-  "projects/R2SDHF/data/Plasmo/R2SDHF-expression-matrix.tsv",
+  "projects/PROJECT_NAME/data/PROJECT_NAME-expression-matrix.tsv",
   check.names = FALSE,
   stringsAsFactors = FALSE
 )
 
-## Jimina's data
-#Import 
-de_files <- list.files("projects/Anderson-Suthar_collab/data", pattern = "^DE_", full.names = TRUE)
-
-de_list <- setNames(
-  lapply(de_files, function(f) {
-    if (grepl("\\.csv$", f)) read.csv(f) else read_excel(f)
-  }),
-  gsub("\\.(xlsx|csv)$", "", basename(de_files))
-)
-
-names(de_list)
+## Alternative import: pre-computed per-contrast DE tables
+# Use this instead of (or alongside) the matrix above if your data arrives as
+# one DE results file per comparison (xlsx/csv) rather than a raw count matrix.
+# de_files <- list.files("projects/PROJECT_NAME/data", pattern = "^DE_", full.names = TRUE)
+#
+# de_list <- setNames(
+#   lapply(de_files, function(f) {
+#     if (grepl("\\.csv$", f)) read.csv(f) else read_excel(f)
+#   }),
+#   gsub("\\.(xlsx|csv)$", "", basename(de_files))
+# )
+#
+# names(de_list)
 
 
 
@@ -45,37 +46,44 @@ colnames(counts) <- sub("_count$", "", colnames(counts))
 
 
 # rename columns
+# EDIT: this is the key project-specific step. LHS = the raw column names in
+# YOUR expression matrix (run `colnames(counts)` first to see them — e.g. a
+# Plasmidsaurus matrix has columns like CODE_1, CODE_2, ...). RHS = meaningful
+# `condition_timepoint_replicate` names that you choose to describe your design.
+# The example below shows a control + 3-treatment, 3-timepoint, 3-replicate
+# design (one of the more complex shapes you'll encounter) — trim/extend rows
+# and rename groups to match your actual experiment.
 rename_map <- c(
-  "R2SDHF_1"  = "Mock_0_1",
-  "R2SDHF_2"  = "Mock_0_2",
-  "R2SDHF_3"  = "Mock_0_3",
-  "R2SDHF_4"  = "TX_12_1",
-  "R2SDHF_5"  = "TX_12_2",
-  "R2SDHF_6"  = "TX_12_3",
-  "R2SDHF_7"  = "ROV_12_1",
-  "R2SDHF_8"  = "ROV_12_2",
-  "R2SDHF_9"  = "ROV_12_3",
-  "R2SDHF_10" = "MAD_12_1",
-  "R2SDHF_11" = "MAD_12_2",
-  "R2SDHF_12" = "MAD_12_3",
-  "R2SDHF_13" = "TX_24_1",
-  "R2SDHF_14" = "TX_24_2",
-  "R2SDHF_15" = "TX_24_3",
-  "R2SDHF_16" = "ROV_24_1",
-  "R2SDHF_17" = "ROV_24_2",
-  "R2SDHF_18" = "ROV_24_3",
-  "R2SDHF_19" = "MAD_24_1",
-  "R2SDHF_20" = "MAD_24_2",
-  "R2SDHF_21" = "MAD_24_3",
-  "R2SDHF_22" = "TX_48_1",
-  "R2SDHF_23" = "TX_48_2",
-  "R2SDHF_24" = "TX_48_3",
-  "R2SDHF_25" = "ROV_48_1",
-  "R2SDHF_26" = "ROV_48_2",
-  "R2SDHF_27" = "ROV_48_3",
-  "R2SDHF_28" = "MAD_48_1",
-  "R2SDHF_29" = "MAD_48_2",
-  "R2SDHF_30" = "MAD_48_3"
+  "SAMPLE_1"  = "Control_0_1",
+  "SAMPLE_2"  = "Control_0_2",
+  "SAMPLE_3"  = "Control_0_3",
+  "SAMPLE_4"  = "TreatmentA_1_1",
+  "SAMPLE_5"  = "TreatmentA_1_2",
+  "SAMPLE_6"  = "TreatmentA_1_3",
+  "SAMPLE_7"  = "TreatmentC_1_1",
+  "SAMPLE_8"  = "TreatmentC_1_2",
+  "SAMPLE_9"  = "TreatmentC_1_3",
+  "SAMPLE_10" = "TreatmentB_1_1",
+  "SAMPLE_11" = "TreatmentB_1_2",
+  "SAMPLE_12" = "TreatmentB_1_3",
+  "SAMPLE_13" = "TreatmentA_2_1",
+  "SAMPLE_14" = "TreatmentA_2_2",
+  "SAMPLE_15" = "TreatmentA_2_3",
+  "SAMPLE_16" = "TreatmentC_2_1",
+  "SAMPLE_17" = "TreatmentC_2_2",
+  "SAMPLE_18" = "TreatmentC_2_3",
+  "SAMPLE_19" = "TreatmentB_2_1",
+  "SAMPLE_20" = "TreatmentB_2_2",
+  "SAMPLE_21" = "TreatmentB_2_3",
+  "SAMPLE_22" = "TreatmentA_3_1",
+  "SAMPLE_23" = "TreatmentA_3_2",
+  "SAMPLE_24" = "TreatmentA_3_3",
+  "SAMPLE_25" = "TreatmentC_3_1",
+  "SAMPLE_26" = "TreatmentC_3_2",
+  "SAMPLE_27" = "TreatmentC_3_3",
+  "SAMPLE_28" = "TreatmentB_3_1",
+  "SAMPLE_29" = "TreatmentB_3_2",
+  "SAMPLE_30" = "TreatmentB_3_3"
 )
 
 # Rename only columns that exist
@@ -117,40 +125,48 @@ list(
 )
 
 # remove low count samples
-counts <- counts[, colnames(counts) != "MAD_12_1"]
-counts <- counts[, colnames(counts) != "MAD_12_2"]
-counts <- counts[, colnames(counts) != "MAD_12_3"]
-counts <- counts[, colnames(counts) != "MAD_48_1"]
-counts <- counts[, colnames(counts) != "MAD_48_2"]
-counts <- counts[, colnames(counts) != "MAD_48_3"]
-counts <- counts[, colnames(counts) != "MAD_24_1"]
-counts <- counts[, colnames(counts) != "MAD_24_2"]
-counts <- counts[, colnames(counts) != "MAD_24_3"]
+# EDIT: this is a decision point — look at qc_summary / qc_list above (total
+# reads, detected genes, percent of library) and decide which samples (if any)
+# should be dropped before fitting the model. The example below shows an entire
+# treatment group (TreatmentB) failing QC and being removed at every timepoint —
+# this is exactly the kind of mid-pipeline decision the QC step is meant to
+# surface. Replace these names with whatever samples your own QC flags; don't
+# copy them verbatim.
+counts <- counts[, colnames(counts) != "TreatmentB_1_1"]
+counts <- counts[, colnames(counts) != "TreatmentB_1_2"]
+counts <- counts[, colnames(counts) != "TreatmentB_1_3"]
+counts <- counts[, colnames(counts) != "TreatmentB_3_1"]
+counts <- counts[, colnames(counts) != "TreatmentB_3_2"]
+counts <- counts[, colnames(counts) != "TreatmentB_3_3"]
+counts <- counts[, colnames(counts) != "TreatmentB_2_1"]
+counts <- counts[, colnames(counts) != "TreatmentB_2_2"]
+counts <- counts[, colnames(counts) != "TreatmentB_2_3"]
 
 #Save/load checkpoint
-# saveRDS(counts, "projects/R2SDHF/data/r_objects/plasmo_counts_noMAD.rds")
-counts <- readRDS("projects/R2SDHF/data/r_objects/plasmo_counts_noMAD.rds")
+# Filename encodes the QC decision above (which samples were dropped) so later
+# scripts/analyses stay traceable — adjust the tag to reflect your own decision.
+# saveRDS(counts, "projects/PROJECT_NAME/data/r_objects/counts_filtered.rds")
+counts <- readRDS("projects/PROJECT_NAME/data/r_objects/counts_filtered.rds")
 
 # ---- set up deseq2 object ----
 sample_names <- colnames(counts)
 
+# Derive `condition` directly from the `condition_replicate` names chosen in
+# rename_map above, by stripping the trailing replicate number. This works for
+# any treatment/timepoint scheme as long as the convention is
+# `<condition>_<replicate>` with a numeric replicate suffix — adjust the regex
+# if your replicate isn't a trailing integer (e.g. "_rep1").
 colData <- data.frame(sample = sample_names) |>
   dplyr::mutate(
-    group = dplyr::case_when(
-      stringr::str_detect(sample, "Mock") ~ "Mock",
-      TRUE ~ stringr::str_extract(sample, "TX|MAD|ROV")
-    ),
-    time = dplyr::case_when(
-      stringr::str_detect(sample, "Mock") ~ "0",
-      TRUE ~ stringr::str_extract(sample, "12|24|48")
-    ),
-    condition = ifelse(group == "Mock", "Mock_0", paste0(group, "_", time))
+    condition = sub("_[0-9]+$", "", sample)
   )
 
 rownames(colData) <- colData$sample
 
-# Ensure the reference level is Mock_0 so all contrasts are computed vs Mock_0
-colData$condition <- relevel(factor(colData$condition), ref = "Mock_0")
+# EDIT: set this to your control/reference condition so all contrasts are
+# computed against it.
+control_condition <- "Control_0"
+colData$condition <- relevel(factor(colData$condition), ref = control_condition)
 
 dds <- DESeq2::DESeqDataSetFromMatrix(
   countData = round(as.matrix(counts)),
@@ -159,6 +175,9 @@ dds <- DESeq2::DESeqDataSetFromMatrix(
 )
 
 # Remove low-information genes to reduce noise and speed up fitting
+# EDIT: these are typical starting points (>= 10 counts in at least N samples,
+# where N is often the size of your smallest group) — revisit based on your
+# own sample sizes and sequencing depth.
 keep <- rowSums(DESeq2::counts(dds) >= 10) >= 5
 dds <- dds[keep, ]
 
@@ -172,15 +191,15 @@ dds <- DESeq2::DESeq(dds, minReplicatesForReplace = Inf)
 # Inspect the coefficient names to confirm which contrasts exist
 coef_names <- DESeq2::resultsNames(dds)
 
-# Keep only coefficients that represent contrasts against the Mock_0 reference
-coef_names_vs_mock <- coef_names[grep("vs_Mock", coef_names)]
+# Keep only coefficients that represent contrasts against the control reference
+coef_names_vs_ref <- coef_names[grep(paste0("vs_", control_condition), coef_names)]
 
-# Shrink log2 fold-changes with apeglm for each vs-Mock coefficient
+# Shrink log2 fold-changes with apeglm for each vs-control coefficient
 res_shrunk_list <- setNames(
-  lapply(coef_names_vs_mock, function(coef_name) {
+  lapply(coef_names_vs_ref, function(coef_name) {
     DESeq2::lfcShrink(dds, coef = coef_name, type = "apeglm")
   }),
-  coef_names_vs_mock
+  coef_names_vs_ref
 )
 
 # Quick check of unshrunk MA plot for the default results
@@ -189,8 +208,8 @@ DESeq2::plotMA(res, ylim = c(-5, 5))
 
 
 #Save/load DESeq object
-# saveRDS(dds, "projects/R2SDHF/data/r_objects/plasmo_dds_noMAD.rds")
-dds <- readRDS("projects/R2SDHF/data/r_objects/plasmo_dds_noMAD.rds")
+# saveRDS(dds, "projects/PROJECT_NAME/data/r_objects/dds_filtered.rds")
+dds <- readRDS("projects/PROJECT_NAME/data/r_objects/dds_filtered.rds")
 
 # Normalied reads
 dds <- estimateSizeFactors(dds)
@@ -198,8 +217,8 @@ normalized_counts <- counts(dds, normalized=TRUE)
 
 
 #Save/load Shrunk Data
-saveRDS(res_shrunk_list, "projects/R2SDHF/data/Plasmo_resShrink_noMAD_qcmin10.rds")
-res_shrunk_list <- readRDS("projects/R2SDHF/data/Plasmo_resShrink_noMAD_qcmin10.rds")
+saveRDS(res_shrunk_list, "projects/PROJECT_NAME/results/resShrink.rds")
+res_shrunk_list <- readRDS("projects/PROJECT_NAME/results/resShrink.rds")
 
 
 # ---- ADD mapping of gene names ----
@@ -214,6 +233,9 @@ all_ensembl <- res_shrunk_list |>
 all_ensembl_clean <- sub("\\..*$", "", all_ensembl)
 
 # ---- Build mapping table ----
+# Default below is human (org.Hs.eg.db). For mouse, swap for org.Mm.eg.db
+# (the genesets/ folder also ships a pre-built mouse_gene_map_ensembl_symbol.rds
+# you can read directly instead of querying AnnotationDbi).
 gene_map <- AnnotationDbi::select(
   org.Hs.eg.db,
   keys    = all_ensembl_clean,
@@ -240,8 +262,8 @@ res_shrunk_list <- purrr::map(res_shrunk_list, function(df) {
   
 })
 
-saveRDS(res_shrunk_list, "projects/R2SDHF/data/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
-res_shrunk_list <- readRDS("projects/R2SDHF/data/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
+saveRDS(res_shrunk_list, "projects/PROJECT_NAME/results/resShrink_annotated.rds")
+res_shrunk_list <- readRDS("projects/PROJECT_NAME/results/resShrink_annotated.rds")
 
 
 
