@@ -9,24 +9,9 @@ figures
 .obsidian
 omnipathr-log
 
-# Ignore all project data
+# Ignore all project data except the template
 projects/*/data/*
-
-#add anderson-suthar readme
-!projects/Anderson-Suthar_collab/data/
-projects/Anderson-Suthar_collab/data/*
-!projects/Anderson-Suthar_collab/data/README.md
-!projects/Anderson-Suthar_collab/data/r_objects/
-projects/Anderson-Suthar_collab/data/r_objects/*
-!projects/Anderson-Suthar_collab/data/r_objects/README.md
-
-#add LSS7T8 readme
-!projects/LSS7T8/data/
-projects/LSS7T8/data/*
-!projects/LSS7T8/data/README.md
-!projects/LSS7T8/data/r_objects/
-projects/LSS7T8/data/r_objects/*
-!projects/LSS7T8/data/r_objects/README.md
+!projects/_template/data/**
 
 # shared gene sets / gene-ID maps (large reference files, not tracked)
 genesets/*
