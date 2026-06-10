@@ -1,48 +1,16 @@
 # ---- Libraries ----
 library(tidyverse)
 library(clusterProfiler)
-library(org.Hs.eg.db)
 library(pathview)
 library(openxlsx)
-library(clusterProfiler)
-library(msigdbr)
-library(dplyr)
-library(tibble)
-library(purrr)
-# ---- Data Load ----
-res_shrunk_list <- readRDS("projects/R2SDHF/data/Plasmo/Plasmo_resShrink_noMAD.rds")
+# ---- Load helper functions/Data Load ----
+invisible(sapply(list.files("R", full.names = TRUE), source))
 
-#Ad Entrez Id column to data list
-
-res_shrunk_list <- purrr::map(res_shrunk_list, function(df) {
-  
-  ensembl_keys <- rownames(df)
-  ensembl_keys <- ensembl_keys[!is.na(ensembl_keys)]
-  ensembl_keys <- as.character(ensembl_keys)
-  
-  map_df <- AnnotationDbi::select(
-    x       = org.Hs.eg.db,
-    keys    = unique(ensembl_keys),
-    keytype = "ENSEMBL",
-    columns = "ENTREZID"
-  ) |>
-    tibble::as_tibble() |>
-    dplyr::rename(ensembl_id = ENSEMBL, entrez_id = ENTREZID) |>
-    dplyr::filter(!is.na(ensembl_id)) |>
-    dplyr::distinct(ensembl_id, .keep_all = TRUE)
-  
-  df_tbl <- as.data.frame(df) |>
-    tibble::rownames_to_column("ensembl_id") |>
-    tibble::as_tibble()
-  
-  dplyr::left_join(df_tbl, map_df, by = "ensembl_id")
-})
-
-
+res_shrunk_list <- load_checkpoint("res_shrunk_list_annotated", dir = "projects/PROJECT_NAME/data/r_objects")
 
 # ---- Kegg ----
-#Extract signficant genes
-p_col   <- "padj" 
+#Extract signficant genes based on lfc
+p_col   <- "padj"
 p_cut   <- 0.05
 lfc_cut <- 1
 
@@ -57,19 +25,20 @@ sigGenes_list <- purrr::imap(res_shrunk_list, function(df, contrast_name) {
     unique()
 })
 
+# Run KEGG enrichment for each contrast
 keggRes_list <- purrr::imap(sigGenes_list, function(sigGenes, contrast_name) {
-  
+
   if (length(sigGenes) == 0) return(NULL)
-  
+
   clusterProfiler::enrichKEGG(
     gene     = sigGenes,
-    organism = "hsa"
+    organism = "hsa"  # Mouse: "mmu"
   )
 })
 
-# Kegg table
-outdir  <- "projects/R2SDHF/data/kegg"
-outfile <- file.path(outdir, "R2SDHF_kegg_results_noMAD.xlsx")
+# Kegg table save
+outdir  <- "projects/PROJECT_NAME/data/kegg"
+outfile <- file.path(outdir, "kegg_results.xlsx")
 
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
@@ -91,18 +60,21 @@ purrr::imap(keggRes_list, function(res, contrast_name) {
 openxlsx::saveWorkbook(wb, outfile, overwrite = TRUE)
 
 
-# ---- KEGG Pathview (ALS + Alzheimer) for each contrast ----
+# ---- KEGG Pathview for selected pathways, for each contrast ----
 p_col   <- "padj"   # "pvalue" or "padj"
 p_cut   <- 0.05
 lfc_cut <- 1
 
+# EDIT: pick pathway IDs (use clusterProfiler::search_kegg_organism()).
+# Names below become the output subfolder names.
 pathways <- list(
-  als       = "hsa05014",
-  alzheimer = "hsa05010"
+  pathway_1 = "hsaXXXXX",
+  pathway_2 = "hsaYYYYY"
 )
 
-dir.create("projects/R2SDHF/figures/plasmo/pathways/als", recursive = TRUE, showWarnings = FALSE)
-dir.create("projects/R2SDHF/figures/plasmo/pathways/alzheimer", recursive = TRUE, showWarnings = FALSE)
+for (folder in names(pathways)) {
+  dir.create(file.path("projects/PROJECT_NAME/figures/pathways", folder), recursive = TRUE, showWarnings = FALSE)
+}
 
 for (contrast_name in names(res_shrunk_list)) {
   
@@ -125,13 +97,13 @@ for (contrast_name in names(res_shrunk_list)) {
       "__", pid, "_"
     )
     
-    outdir <- file.path("projects/R2SDHF/figures/plasmo/pathways", folder)
-    
+    outdir <- file.path("projects/PROJECT_NAME/figures/pathways", folder)
+
     withr::with_dir(outdir, {
       pathview::pathview(
         gene.data   = logFC,
         pathway.id  = pid,
-        species     = "hsa",
+        species     = "hsa",  # Mouse: "mmu"
         limit       = list(gene = 3, cpd = 1),
         out.suffix  = prefix,
         kegg.native = TRUE
@@ -143,7 +115,7 @@ for (contrast_name in names(res_shrunk_list)) {
 
 # ---- Top 5 pathways for each treatment ----
 
-base_outdir <- "projects/R2SDHF/figures/plasmo/pathways/top5_FE"
+base_outdir <- "projects/PROJECT_NAME/figures/pathways/top5_FE"
 dir.create(base_outdir, recursive = TRUE, showWarnings = FALSE)
 
 ratio_to_num <- function(x) {
@@ -179,19 +151,19 @@ for (contrast_name in names(keggRes_list)) {
   dir.create(contrast_dir, recursive = TRUE, showWarnings = FALSE)
   
   for (pid in top5_ids) {
-    
+
     prefix <- paste0(
       gsub("[^A-Za-z0-9_]+", "_", contrast_name),
       "__top5FE__",
       pid,
       "_"
     )
-    
+
     withr::with_dir(contrast_dir, {
       pathview::pathview(
         gene.data   = logFC,
         pathway.id  = pid,
-        species     = "hsa",
+        species     = "hsa",  # Mouse: "mmu"
         kegg.native = TRUE,
         out.suffix  = prefix,
         limit       = list(gene = 3, cpd = 1)
@@ -199,163 +171,3 @@ for (contrast_name in names(keggRes_list)) {
     })
   }
 }
-
-# ---- GSEA ----
-gmt_sym <- clusterProfiler::read.gmt(
-  "genesets/WP_AMYOTROPHIC_LATERAL_SCLEROSIS_ALS.v2026.1.Hs.gmt"
-)
-
-sym2ent <- AnnotationDbi::select(
-  org.Hs.eg.db,
-  keys    = unique(gmt_sym$gene),
-  keytype = "SYMBOL",
-  columns = "ENTREZID"
-)
-
-gmt_ent <- gmt_sym |>
-  dplyr::left_join(
-    tibble::as_tibble(sym2ent) |>
-      dplyr::rename(gene = SYMBOL, entrez_id = ENTREZID) |>
-      dplyr::filter(!is.na(entrez_id)) |>
-      dplyr::distinct(gene, .keep_all = TRUE),
-    by = "gene"
-  ) |>
-  dplyr::filter(!is.na(entrez_id)) |>
-  dplyr::transmute(term = term, gene = entrez_id)
-
-ranked_list <- purrr::map(res_shrunk_list, function(df) {
-  
-  df2 <- df |>
-    dplyr::filter(!is.na(entrez_id), !is.na(log2FoldChange)) |>
-    dplyr::mutate(entrez_id = as.character(entrez_id)) |>
-    dplyr::arrange(dplyr::desc(abs(log2FoldChange))) |>
-    dplyr::distinct(entrez_id, .keep_all = TRUE)
-  
-  geneList <- df2$log2FoldChange
-  names(geneList) <- df2$entrez_id
-  
-  sort(geneList, decreasing = TRUE)
-})
-
-gsea_results <- purrr::map(ranked_list, function(geneList) {
-  clusterProfiler::GSEA(
-    geneList     = geneList,
-    TERM2GENE    = gmt_ent,
-    pvalueCutoff = 1
-  )
-})
-
-gsea_tbl_list <- purrr::imap(gsea_results, function(res, contrast) {
-  tibble::as_tibble(res@result) |>
-    dplyr::mutate(contrast = contrast, .before = 1)
-})
-
-
-# ---- Table ----
-# Assumes you already have:
-# - res_shrunk_list (list of tibbles) with columns: entrez_id, log2FoldChange (or stat)
-# - gmt_ent (TERM2GENE tibble/data.frame with columns: term, gene [ENTREZ IDs as character])
-
-ranked_list <- purrr::map(res_shrunk_list, function(df) {
-  
-  df2 <- df |>
-    dplyr::filter(!is.na(entrez_id), !is.na(log2FoldChange)) |>
-    dplyr::mutate(entrez_id = as.character(entrez_id)) |>
-    dplyr::arrange(dplyr::desc(abs(log2FoldChange))) |>
-    dplyr::distinct(entrez_id, .keep_all = TRUE)
-  
-  geneList <- df2$log2FoldChange
-  names(geneList) <- df2$entrez_id
-  
-  sort(geneList, decreasing = TRUE)
-})
-
-gsea_results <- purrr::map(ranked_list, function(geneList) {
-  clusterProfiler::GSEA(
-    geneList = geneList,
-    TERM2GENE = gmt_ent,
-    pvalueCutoff = 1,
-    minGSSize = 1
-  )
-})
-
-gsea_tbl_all <- purrr::imap_dfr(gsea_results, function(res, contrast) {
-  
-  out <- tibble::as_tibble(res@result)
-  
-  if (nrow(out) == 0) {
-    return(tibble::tibble(
-      contrast = contrast,
-      term = NA_character_,
-      setSize = NA_integer_,
-      NES = NA_real_,
-      pvalue = NA_real_,
-      p.adjust = NA_real_
-    ))
-  }
-  
-  out |>
-    dplyr::transmute(
-      contrast = contrast,
-      term = ID,
-      setSize,
-      NES,
-      pvalue,
-      p.adjust
-    )
-})
-
-gsea_tbl_all
-
-
-write.table(
-  gsea_tbl_all,
-  file = "clipboard",
-  sep = "\t",
-  row.names = FALSE,
-  quote = FALSE
-)
-
-
-
-
-
-
-
-
-
-
-
-gsea_summary <- purrr::imap_dfr(gsea_results, function(res, contrast) {
-  
-  if (nrow(res@result) == 0) {
-    return(
-      tibble::tibble(
-        contrast = contrast,
-        NES = NA_real_,
-        pvalue = NA_real_,
-        p.adjust = NA_real_,
-        size = NA_integer_,
-        leading_edge = NA_character_
-      )
-    )
-  }
-  
-  tibble::as_tibble(res@result) |>
-    dplyr::transmute(
-      contrast = contrast,
-      NES,
-      pvalue,
-      p.adjust,
-      size,
-      leading_edge
-    )
-})
-
-gsea_summary <- gsea_summary |>
-  dplyr::mutate(
-    NES = round(NES, 3),
-    pvalue = signif(pvalue, 3),
-    p.adjust = signif(p.adjust, 3)
-  ) |>
-  dplyr::arrange(p.adjust)

@@ -1,10 +1,19 @@
 # ---- Library ----
 library(fgsea)
 library(ggvenn)
+library(DESeq2)
+library(ggplot2)
+library(dplyr)
+library(org.Hs.eg.db)  # Mouse: org.Mm.eg.db
+library(AnnotationDbi)
+library(grid)
+library(openxlsx)
+# ---- Load helper functions ----
+invisible(sapply(list.files("R", full.names = TRUE), source))
 # ---- Data load ----
+# Human Hallmark gene sets. For mouse, use the matching *.Mm.symbols.gmt file.
 gmt_path <- "genesets/h.all.v2025.1.Hs.symbols.gmt"
 hallmark_sets <- gmtPathways(gmt_path)
-#
 
 # ---- PCA ----
 vsd <- vst(dds, blind = FALSE)
@@ -14,32 +23,32 @@ percentVar <- round(100 * attr(pca_data, "percentVar"))
 
 pca_data$treatment_time <- as.character(pca_data$condition)
 
+# EDIT: replace with your own condition/treatment names and colors.
+# TreatmentB is omitted since it was dropped during QC in script 1.
 base_cols <- c(
-  Mock = "#D62728",
-  TX   = "blue",
-  MAD  = "darkgreen",
-  ROV  = "purple"
+  Control     = "#D62728",
+  TreatmentA  = "blue",
+  TreatmentB  = "darkgreen",
+  TreatmentC  = "purple"
 )
 
 make_shades <- function(hex, n = 3) {
   colorRampPalette(c("#FFFFFF", hex))(n + 1)[-1]
 }
 
-tx_shades  <- make_shades(base_cols[["TX"]],  3)
-mad_shades <- make_shades(base_cols[["MAD"]], 3)
-rov_shades <- make_shades(base_cols[["ROV"]], 3)
+a_shades <- make_shades(base_cols[["TreatmentA"]], 3)
+c_shades <- make_shades(base_cols[["TreatmentC"]], 3)
 
 col_map <- c(
-  Mock_0 = base_cols[["Mock"]],
-  TX_12  = tx_shades[1],  TX_24  = tx_shades[2],  TX_48  = tx_shades[3],
-  MAD_12 = mad_shades[1], MAD_24 = mad_shades[2], MAD_48 = mad_shades[3],
-  ROV_12 = rov_shades[1], ROV_24 = rov_shades[2], ROV_48 = rov_shades[3]
+  Control_0    = base_cols[["Control"]],
+  TreatmentA_1 = a_shades[1], TreatmentA_2 = a_shades[2], TreatmentA_3 = a_shades[3],
+  TreatmentC_1 = c_shades[1], TreatmentC_2 = c_shades[2], TreatmentC_3 = c_shades[3]
 )
 
 pca_data$treatment_time <- factor(
   pca_data$treatment_time,
-  levels = c("Mock_0","TX_12","TX_24","TX_48",
-             "ROV_12","ROV_24","ROV_48")
+  levels = c("Control_0","TreatmentA_1","TreatmentA_2","TreatmentA_3",
+             "TreatmentC_1","TreatmentC_2","TreatmentC_3")
 )
 
 
@@ -69,17 +78,18 @@ p <- ggplot(pca_data, aes(PC1, PC2, color = treatment_time)) +
 p
 
 ggsave(
-  filename = "projects/R2SDHF/figures/plasmo/PCA(nomad)_treatment_time.png",
+  filename = "projects/PROJECT_NAME/figures/PCA_treatment_time.png",
   plot = p,
   width = 8,
   height = 6
 )
 
 # ---- Volcano Plots ----
+# EDIT: match the significance cutoffs used elsewhere
 padj_cutoff <- 0.05
 lfc_cutoff  <- 1.5
 
-outdir <- "projects/R2SDHF/figures/plasmo/volcano/nomad"
+outdir <- "projects/PROJECT_NAME/figures/volcano"
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
 for (coef_name in names(res_shrunk_list)) {
@@ -175,12 +185,13 @@ if (!"sample" %in% colnames(cd)) {
   cd$sample <- rownames(cd)
 }
 
+# EDIT: "Control" here must match the prefix of your control_condition
 annotation_col <- cd |>
   dplyr::mutate(
     condition = as.character(.data$condition),
-    treatment = dplyr::if_else(stringr::str_detect(.data$condition, "^Mock"), "Mock",
+    treatment = dplyr::if_else(stringr::str_detect(.data$condition, "^Control"), "Control",
                                stringr::str_extract(.data$condition, "^[A-Za-z]+")),
-    time = dplyr::if_else(.data$treatment == "Mock", "0",
+    time = dplyr::if_else(.data$treatment == "Control", "0",
                           stringr::str_extract(.data$condition, "(?<=_)[0-9]+"))
   ) |>
   dplyr::select(sample, treatment, time)
@@ -189,8 +200,9 @@ rownames(annotation_col) <- annotation_col$sample
 annotation_col$sample <- NULL
 
 
-# Order columns: Mock first, then TX, MAD, ROV by time (only levels present)
-treat_levels <- intersect(c("Mock","TX","ROV"), unique(annotation_col$treatment))
+# Order columns: Control first, then by time
+# EDIT: replace with your own treatment names/order
+treat_levels <- intersect(c("Control","TreatmentA","TreatmentC"), unique(annotation_col$treatment))
 
 desired_order <- annotation_col |>
   dplyr::mutate(
@@ -214,18 +226,21 @@ pheatmap::pheatmap(
 
 
 
-# ---- log2FC heatmap vs Mock_0 (non-sig black), biomaRt gene labels, no MAD ----
+# ---- log2FC heatmap vs control (non-sig black), biomaRt gene labels ----
+# Human dataset below. For mouse, use "mmusculus_gene_ensembl"
 mart <- biomaRt::useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl")
 
+# EDIT: match the significance cutoffs used elsewhere
 lfc_cutoff  <- 1.5
 padj_cutoff <- 0.05
 top_n_genes <- 250
 
-# Identify contrasts comparing each condition to Mock_0
-keep_names <- names(res_shrunk_list)[stringr::str_detect(names(res_shrunk_list), "_vs_Mock_0$")]
+# Contrasts vs control (set in script 1)
+control_condition <- "Control_0"
+keep_names <- names(res_shrunk_list)[stringr::str_detect(names(res_shrunk_list), paste0("_vs_", control_condition, "$"))]
 res_use <- res_shrunk_list[keep_names]
 
-# Convert DESeqResults objects to data frames and retain contrast names
+# Convert results to data frames, keep contrast name
 res_use_df <- purrr::imap(res_use, function(res, contrast_name) {
   df <- as.data.frame(res)
   df$ensembl_id <- rownames(df)
@@ -233,13 +248,13 @@ res_use_df <- purrr::imap(res_use, function(res, contrast_name) {
   df
 })
 
-# Combine all contrasts and retain genes meeting significance thresholds
+# Combine contrasts, keep genes meeting thresholds
 sig_tbl <- dplyr::bind_rows(res_use_df) |>
   dplyr::filter(!is.na(padj), !is.na(log2FoldChange)) |>
   dplyr::filter(padj < padj_cutoff, abs(log2FoldChange) >= lfc_cutoff) |>
   dplyr::select(ensembl_id, log2FoldChange, padj, contrast)
 
-# Rank genes by maximum absolute log2 fold change across contrasts
+# Rank genes by max abs log2FC across contrasts
 top_genes <- sig_tbl |>
   dplyr::group_by(ensembl_id) |>
   dplyr::summarise(max_abs_lfc = max(abs(log2FoldChange)), .groups = "drop") |>
@@ -247,8 +262,7 @@ top_genes <- sig_tbl |>
   dplyr::slice_head(n = top_n_genes) |>
   dplyr::pull(ensembl_id)
 
-# Construct matrix of log2 fold changes for selected genes
-# Values not meeting thresholds are set to NA for visualization
+# Build log2FC matrix; non-significant values become NA
 lfc_mat <- sapply(res_use_df, function(df) {
   idx <- match(top_genes, df$ensembl_id)
   lfc <- df$log2FoldChange[idx]
@@ -261,17 +275,17 @@ lfc_mat <- sapply(res_use_df, function(df) {
 })
 colnames(lfc_mat) <- keep_names
 
-# Parse contrast names and generate simplified column labels (e.g., "TX 12")
+# Parse contrast names into simplified labels (e.g. "TreatmentA 1")
 contrast_tbl <- tibble::tibble(contrast = colnames(lfc_mat)) |>
   dplyr::mutate(
-    condition = stringr::str_match(contrast, "condition_([^_]+_[0-9]+)_vs_Mock_0")[, 2],
+    condition = stringr::str_match(contrast, paste0("condition_([^_]+_[0-9]+)_vs_", control_condition))[, 2],
     treatment = stringr::str_extract(condition, "^[A-Za-z]+"),
     time      = as.numeric(stringr::str_extract(condition, "(?<=_)[0-9]+")),
     label     = paste(treatment, time)
   )
 
-# Order columns by time, then treatment (TX and ROV adjacent within each timepoint)
-treat_levels <- c("TX", "ROV")
+# Order columns by time then treatment. EDIT to match your treatments
+treat_levels <- c("TreatmentA", "TreatmentC")
 contrast_order <- contrast_tbl |>
   dplyr::mutate(
     time = factor(time, levels = sort(unique(time))),
@@ -287,7 +301,7 @@ col_label_map <- contrast_tbl$label
 names(col_label_map) <- contrast_tbl$contrast
 colnames(lfc_mat) <- col_label_map[colnames(lfc_mat)]
 
-# Map Ensembl identifiers to HGNC symbols; fallback to original ID if unavailable
+# Map Ensembl IDs to HGNC symbols, fall back to Ensembl ID
 top_genes_clean <- sub("\\..*$", "", top_genes)
 
 bm <- biomaRt::getBM(
@@ -319,35 +333,33 @@ pheatmap::pheatmap(
   show_colnames = TRUE,
   show_rownames = FALSE,
   angle_col = 0,
-  main = "Top 250 DE Genes Relative to Mock (log2 Fold Change)"
+  main = paste0("Top ", top_n_genes, " DE Genes Relative to Control (log2 Fold Change)")
 )
 
 # ---- Heatmap specific pathways ----
-library(grid)
 
-
-res_shrunk_list <- readRDS("projects/R2SDHF/data/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
-# Thresholds used to define “responsive” genes within the selected hallmark set
+res_shrunk_list <- readRDS("projects/PROJECT_NAME/results/resShrink_annotated.rds")
+# EDIT: match the significance cutoffs used elsewhere
 lfc_cutoff  <- 1.5
 padj_cutoff <- 0.05
 
-# Hallmark geneset to visualize
-hallmark_name <- "HALLMARK_INTERFERON_ALPHA_RESPONSE"
+# EDIT: pick a hallmark set from script 3's GSEA results
+hallmark_name <- "<HALLMARK_SET_NAME>"
 symbols <- unique(hallmark_sets[[hallmark_name]])
 
-# Keep only contrasts that compare to Mock_0
-keep_names <- names(res_shrunk_list)[grepl("_vs_Mock_0$", names(res_shrunk_list))]
+# Keep contrasts vs control
+keep_names <- names(res_shrunk_list)[grepl(paste0("_vs_", control_condition, "$"), names(res_shrunk_list))]
 res_use <- res_shrunk_list[keep_names]
 
-# Normalize Ensembl IDs by stripping version suffix (e.g., ENSG... .12 -> ENSG...)
+# Strip Ensembl version suffix (ENSG...12 -> ENSG...)
 clean_ens <- function(x) sub("\\..*$", "", as.character(x))
 
-# Detect which columns contain symbols and Ensembl IDs in the DE result tables
+# Detect symbol/Ensembl ID columns
 df0 <- as.data.frame(res_use[[1]])
 sym_col <- intersect(c("SYMBOL", "symbol", "hgnc_symbol"), names(df0))[1]
 ens_col <- intersect(c("ensembl_id", "ensembl_gene_id"), names(df0))[1]
 
-# Convert each DE result to a data.frame and keep the contrast name as a column
+# Convert to data frames, keep contrast name
 res_use_df <- lapply(names(res_use), function(nm) {
   df <- as.data.frame(res_use[[nm]])
   df$contrast <- nm
@@ -355,7 +367,7 @@ res_use_df <- lapply(names(res_use), function(nm) {
 })
 names(res_use_df) <- names(res_use)
 
-# Collect Ensembl IDs that are in the hallmark set and significant in any contrast
+# Genes in the hallmark set, significant in any contrast
 sig_ens <- unique(unlist(lapply(res_use_df, function(df) {
   df$symbol <- df[[sym_col]]
   df$ensembl_id_clean <- clean_ens(df[[ens_col]])
@@ -365,7 +377,7 @@ sig_ens <- unique(unlist(lapply(res_use_df, function(df) {
   unique(df$ensembl_id_clean)
 }), use.names = FALSE))
 
-# Build a stable Ensembl -> symbol mapping from the first contrast table
+# Ensembl -> symbol map from the first contrast
 sym_map <- res_use_df[[1]]
 sym_map <- data.frame(
   ensembl_id_clean = clean_ens(sym_map[[ens_col]]),
@@ -374,15 +386,15 @@ sym_map <- data.frame(
 )
 sym_map <- sym_map[!is.na(sym_map$ensembl_id_clean) & !duplicated(sym_map$ensembl_id_clean), ]
 
-# Pull DESeq2 normalized counts and add cleaned Ensembl IDs to match DE tables
+# Normalized counts, with cleaned Ensembl IDs
 norm_counts <- as.data.frame(DESeq2::counts(dds, normalized = TRUE))
 norm_counts$ensembl_id_clean <- clean_ens(rownames(norm_counts))
 
-# Restrict to genes that are significant in at least one contrast
+# Keep only significant genes
 norm_counts <- norm_counts[norm_counts$ensembl_id_clean %in% sig_ens, , drop = FALSE]
 count_cols <- setdiff(names(norm_counts), "ensembl_id_clean")
 
-# Convert wide counts (genes x samples) into long format (one row per gene-sample)
+# Wide to long: one row per gene-sample
 counts_long <- data.frame(
   ensembl_id_clean = rep(norm_counts$ensembl_id_clean, times = length(count_cols)),
   sample = rep(count_cols, each = nrow(norm_counts)),
@@ -390,20 +402,21 @@ counts_long <- data.frame(
   stringsAsFactors = FALSE
 )
 
-# Bring in sample metadata from the DESeq2 object
+# Add sample metadata
 coldata_df <- as.data.frame(SummarizedExperiment::colData(dds))
 coldata_df$sample <- rownames(coldata_df)
 
-# Combine counts, metadata, and gene symbols into a plotting table
+# Combine into plotting table
 plot_df <- dplyr::left_join(counts_long, coldata_df, by = "sample")
 plot_df <- dplyr::left_join(plot_df, sym_map, by = "ensembl_id_clean")
 plot_df <- plot_df[!is.na(plot_df$symbol) & plot_df$symbol %in% symbols, ]
 
-# Parse the condition label into treatment and time, keeping Mock as time 0
+# Parse condition into treatment and time (Control = time 0)
+# EDIT: "Control" must match your control_condition prefix
 plot_df <- plot_df |>
   dplyr::mutate(
-    treatment = dplyr::if_else(grepl("^Mock", condition), "Mock", sub("_.*$", "", condition)),
-    time = dplyr::if_else(grepl("^Mock", condition), 0L, as.integer(sub("^.*_", "", condition))),
+    treatment = dplyr::if_else(grepl("^Control", condition), "Control", sub("_.*$", "", condition)),
+    time = dplyr::if_else(grepl("^Control", condition), 0L, as.integer(sub("^.*_", "", condition))),
     group = paste0(treatment, "_", time)
   )
 
@@ -412,7 +425,7 @@ group_order <- plot_df |>
   dplyr::distinct(group, treatment, time) |>
   dplyr::mutate(
     time = factor(time, levels = sort(unique(time))),
-    treatment = factor(treatment, levels = c("Mock", "TX", "ROV"))
+    treatment = factor(treatment, levels = c("Control", "TreatmentA", "TreatmentC"))
   ) |>
   dplyr::arrange(time, treatment) |>
   dplyr::pull(group)
@@ -420,7 +433,7 @@ group_order <- plot_df |>
 plot_df <- plot_df |>
   dplyr::mutate(group = factor(group, levels = group_order))
 
-# Summarize per gene and group for bar height and error bars
+# Mean/SEM per gene and group
 summary_df <- plot_df |>
   dplyr::group_by(symbol, group, treatment) |>
   dplyr::summarise(
@@ -431,7 +444,7 @@ summary_df <- plot_df |>
     .groups = "drop"
   )
 
-# Choose whether colors are driven by treatment only or by each group/time combination
+# Color by treatment, or by group/time
 color_mode <- "treatment"
 file_ext   <- "png"
 
@@ -441,9 +454,10 @@ plot_df <- plot_df |>
 summary_df <- summary_df |>
   dplyr::mutate(color_key = if (color_mode == "group") as.character(group) else as.character(treatment))
 
-# Define fill colors for bars and points
+# Fill colors for bars/points
+# EDIT: replace with your own treatment names/colors
 fill_map <- if (color_mode == "treatment") {
-  c(Mock = "grey50", TX = "dodgerblue3", ROV = "purple3")
+  c(Control = "grey50", TreatmentA = "dodgerblue3", TreatmentC = "purple3")
 } else {
   setNames(
     rep_len(c("grey50", "dodgerblue3", "purple3", "seagreen3", "orange3"), length(group_order)),
@@ -477,14 +491,14 @@ make_gene_plot <- function(gene_symbol) {
     ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1))
 }
 
-# Gene list to render plots for (one figure per gene)
+# Genes to plot, one figure each
 sig_symbols <- summary_df |>
   dplyr::filter(!is.na(symbol) & symbol != "") |>
   dplyr::distinct(symbol) |>
   dplyr::pull(symbol)
 
 # Output folder per hallmark set
-outdir <- file.path("projects/R2SDHF/figures", "bargraphs", hallmark_name)
+outdir <- file.path("projects/PROJECT_NAME/figures", "bargraphs", hallmark_name)
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
 # Save one plot per gene symbol
@@ -498,25 +512,27 @@ for (g in sig_symbols) {
 
 
 # ---- Venn Diagram ----
-res_shrunk_list <- readRDS("projects/R2SDHF/data/Plasmo/Plasmo_resShrink_noMAD_qcmin10_annotated.rds")
-library(grid)
+res_shrunk_list <- readRDS("projects/PROJECT_NAME/results/resShrink_annotated.rds")
+# EDIT: match the significance cutoffs used elsewhere
 lfc_cutoff  <- 1.5
 padj_cutoff <- 0.05
 
-# Identify contrasts vs Mock_0
+# Contrasts vs control
 keep_names <- names(res_shrunk_list)
-keep_names <- keep_names[grepl("_vs_Mock_0$", keep_names)]
+keep_names <- keep_names[grepl(paste0("_vs_", control_condition, "$"), keep_names)]
 
 # Parse treatment and time from contrast names
 contrast_tbl <- data.frame(
   contrast  = keep_names,
-  condition = sub("condition_([^_]+_[0-9]+)_vs_Mock_0", "\\1", keep_names),
+  condition = sub(paste0("condition_([^_]+_[0-9]+)_vs_", control_condition), "\\1", keep_names),
   stringsAsFactors = FALSE
 )
 
 contrast_tbl$treatment <- sub("_.*", "", contrast_tbl$condition)
 contrast_tbl$time      <- as.numeric(sub(".*_", "", contrast_tbl$condition))
-contrast_tbl <- contrast_tbl[contrast_tbl$treatment %in% c("TX", "ROV"), ]
+# EDIT: compares TreatmentA vs TreatmentC. Adjust names/count for your arms.
+# TreatmentB excluded since it was dropped during QC in script 1.
+contrast_tbl <- contrast_tbl[contrast_tbl$treatment %in% c("TreatmentA", "TreatmentC"), ]
 
 # Build significant gene sets per contrast
 sig_sets <- list()
@@ -536,33 +552,34 @@ for (nm in keep_names) {
   sig_sets[[nm]] <- unique(sub("\\..*$", "", sig_genes))
 }
 
-# Create Venn plots for 12, 24, 48 hours
+# Create Venn plots per timepoint
+# EDIT: replace c(1, 2, 3) with your actual timepoint values
 times <- sort(unique(contrast_tbl$time))
-times <- times[times %in% c(12, 24, 48)]
+times <- times[times %in% c(1, 2, 3)]
 
 venn_plots <- list()
 
 for (tp in times) {
-  
-  tx_con  <- contrast_tbl$contrast[contrast_tbl$time == tp & contrast_tbl$treatment == "TX"]
-  rov_con <- contrast_tbl$contrast[contrast_tbl$time == tp & contrast_tbl$treatment == "ROV"]
-  
+
+  a_con <- contrast_tbl$contrast[contrast_tbl$time == tp & contrast_tbl$treatment == "TreatmentA"]
+  c_con <- contrast_tbl$contrast[contrast_tbl$time == tp & contrast_tbl$treatment == "TreatmentC"]
+
   sets_tp <- list(
-    TX  = sig_sets[[tx_con]],
-    ROV = sig_sets[[rov_con]]
+    TreatmentA = sig_sets[[a_con]],
+    TreatmentC = sig_sets[[c_con]]
   )
-  
+
   venn_plots[[as.character(tp)]] <-
     ggvenn(
       sets_tp,
       show_elements = FALSE
     ) +
-    ggtitle(paste0(tp, "h")) +
+    ggtitle(paste0("T", tp)) +
     theme(plot.title = element_text(hjust = 0.5),
           size = 40)
 }
 
-# Draw all three in a single row
+# Draw all plots in a single row
 grid.newpage()
 pushViewport(viewport(layout = grid.layout(1, length(venn_plots))))
 
@@ -574,39 +591,35 @@ for (i in seq_along(venn_plots)) {
 }
 
 
-library(openxlsx)
-library(org.Hs.eg.db)
-library(AnnotationDbi)
-
-out_dir <- "projects/R2SDHF/data"
+out_dir <- "projects/PROJECT_NAME/results"
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 wb <- createWorkbook()
 
 for (tp in times) {
-  
-  tx_con  <- contrast_tbl$contrast[contrast_tbl$time == tp & contrast_tbl$treatment == "TX"]
-  rov_con <- contrast_tbl$contrast[contrast_tbl$time == tp & contrast_tbl$treatment == "ROV"]
-  
-  tx_genes  <- sig_sets[[tx_con]]
-  rov_genes <- sig_sets[[rov_con]]
-  
-  all_genes <- unique(c(tx_genes, rov_genes))
-  
-  tx_df <- as.data.frame(res_shrunk_list[[tx_con]])
-  tx_df$entrez_id <- sub("\\..*$", "", rownames(tx_df))
-  tx_df <- tx_df[!duplicated(tx_df$entrez_id), 
-                 c("entrez_id", "log2FoldChange", "padj")]
-  names(tx_df)[2:3] <- c("TX_log2FC", "TX_padj")
-  
-  rov_df <- as.data.frame(res_shrunk_list[[rov_con]])
-  rov_df$entrez_id <- sub("\\..*$", "", rownames(rov_df))
-  rov_df <- rov_df[!duplicated(rov_df$entrez_id), 
-                   c("entrez_id", "log2FoldChange", "padj")]
-  names(rov_df)[2:3] <- c("ROV_log2FC", "ROV_padj")
-  
+
+  a_con <- contrast_tbl$contrast[contrast_tbl$time == tp & contrast_tbl$treatment == "TreatmentA"]
+  c_con <- contrast_tbl$contrast[contrast_tbl$time == tp & contrast_tbl$treatment == "TreatmentC"]
+
+  a_genes <- sig_sets[[a_con]]
+  c_genes <- sig_sets[[c_con]]
+
+  all_genes <- unique(c(a_genes, c_genes))
+
+  a_df <- as.data.frame(res_shrunk_list[[a_con]])
+  a_df$entrez_id <- sub("\\..*$", "", rownames(a_df))
+  a_df <- a_df[!duplicated(a_df$entrez_id),
+               c("entrez_id", "log2FoldChange", "padj")]
+  names(a_df)[2:3] <- c("TreatmentA_log2FC", "TreatmentA_padj")
+
+  c_df <- as.data.frame(res_shrunk_list[[c_con]])
+  c_df$entrez_id <- sub("\\..*$", "", rownames(c_df))
+  c_df <- c_df[!duplicated(c_df$entrez_id),
+               c("entrez_id", "log2FoldChange", "padj")]
+  names(c_df)[2:3] <- c("TreatmentC_log2FC", "TreatmentC_padj")
+
   out_df <- data.frame(entrez_id = all_genes, stringsAsFactors = FALSE)
-  
+
   out_df$symbol_id <- mapIds(
     org.Hs.eg.db,
     keys      = as.character(out_df$entrez_id),
@@ -614,23 +627,24 @@ for (tp in times) {
     keytype   = "ENTREZID",
     multiVals = "first"
   )
-  
+
   out_df$membership <- ifelse(
-    out_df$entrez_id %in% tx_genes & out_df$entrez_id %in% rov_genes, "Both",
-    ifelse(out_df$entrez_id %in% tx_genes, "TX_only", "ROV_only")
+    out_df$entrez_id %in% a_genes & out_df$entrez_id %in% c_genes, "Both",
+    ifelse(out_df$entrez_id %in% a_genes, "TreatmentA_only", "TreatmentC_only")
   )
-  
-  out_df <- merge(out_df, tx_df,  by = "entrez_id", all.x = TRUE)
-  out_df <- merge(out_df, rov_df, by = "entrez_id", all.x = TRUE)
-  
+
+  out_df <- merge(out_df, a_df, by = "entrez_id", all.x = TRUE)
+  out_df <- merge(out_df, c_df, by = "entrez_id", all.x = TRUE)
+
   out_df <- out_df[, c("entrez_id", "symbol_id", "membership",
-                       "TX_log2FC", "TX_padj", "ROV_log2FC", "ROV_padj")]
-  
-  out_df <- out_df[order(factor(out_df$membership, 
-                                levels = c("Both", "TX_only", "ROV_only")),
+                       "TreatmentA_log2FC", "TreatmentA_padj",
+                       "TreatmentC_log2FC", "TreatmentC_padj")]
+
+  out_df <- out_df[order(factor(out_df$membership,
+                                levels = c("Both", "TreatmentA_only", "TreatmentC_only")),
                          out_df$entrez_id), ]
-  
-  sheet_name <- paste0(tp, "h")
+
+  sheet_name <- paste0("T", tp)
   addWorksheet(wb, sheet_name)
   writeData(wb, sheet_name, out_df)
   freezePane(wb, sheet_name, firstRow = TRUE)

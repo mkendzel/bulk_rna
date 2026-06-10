@@ -5,6 +5,9 @@ library(DESeq2)
 library(ggvenn)
 library(grid)
 library(readxl)
+# ---- Load helper functions ----
+invisible(sapply(list.files("R", full.names = TRUE), source))
+
 # ----- Import data ----
 ## Primary import: expression matrix (TSV)
 # EDIT: point this at your project's expression matrix
@@ -14,9 +17,7 @@ expr <- read.delim(
   stringsAsFactors = FALSE
 )
 
-## Alternative import: pre-computed per-contrast DE tables
-# Use this instead of (or alongside) the matrix above if your data arrives as
-# one DE results file per comparison (xlsx/csv) rather than a raw count matrix.
+## Alternative import: per-contrast DE tables instead of a count matrix
 # de_files <- list.files("projects/PROJECT_NAME/data", pattern = "^DE_", full.names = TRUE)
 #
 # de_list <- setNames(
@@ -45,45 +46,15 @@ counts$gene_id <- NULL
 colnames(counts) <- sub("_count$", "", colnames(counts))
 
 
-# rename columns
-# EDIT: this is the key project-specific step. LHS = the raw column names in
-# YOUR expression matrix (run `colnames(counts)` first to see them — e.g. a
-# Plasmidsaurus matrix has columns like CODE_1, CODE_2, ...). RHS = meaningful
-# `condition_timepoint_replicate` names that you choose to describe your design.
-# The example below shows a control + 3-treatment, 3-timepoint, 3-replicate
-# design (one of the more complex shapes you'll encounter) — trim/extend rows
-# and rename groups to match your actual experiment.
+# rename columns to project-specific names.
+
 rename_map <- c(
   "SAMPLE_1"  = "Control_0_1",
   "SAMPLE_2"  = "Control_0_2",
   "SAMPLE_3"  = "Control_0_3",
   "SAMPLE_4"  = "TreatmentA_1_1",
   "SAMPLE_5"  = "TreatmentA_1_2",
-  "SAMPLE_6"  = "TreatmentA_1_3",
-  "SAMPLE_7"  = "TreatmentC_1_1",
-  "SAMPLE_8"  = "TreatmentC_1_2",
-  "SAMPLE_9"  = "TreatmentC_1_3",
-  "SAMPLE_10" = "TreatmentB_1_1",
-  "SAMPLE_11" = "TreatmentB_1_2",
-  "SAMPLE_12" = "TreatmentB_1_3",
-  "SAMPLE_13" = "TreatmentA_2_1",
-  "SAMPLE_14" = "TreatmentA_2_2",
-  "SAMPLE_15" = "TreatmentA_2_3",
-  "SAMPLE_16" = "TreatmentC_2_1",
-  "SAMPLE_17" = "TreatmentC_2_2",
-  "SAMPLE_18" = "TreatmentC_2_3",
-  "SAMPLE_19" = "TreatmentB_2_1",
-  "SAMPLE_20" = "TreatmentB_2_2",
-  "SAMPLE_21" = "TreatmentB_2_3",
-  "SAMPLE_22" = "TreatmentA_3_1",
-  "SAMPLE_23" = "TreatmentA_3_2",
-  "SAMPLE_24" = "TreatmentA_3_3",
-  "SAMPLE_25" = "TreatmentC_3_1",
-  "SAMPLE_26" = "TreatmentC_3_2",
-  "SAMPLE_27" = "TreatmentC_3_3",
-  "SAMPLE_28" = "TreatmentB_3_1",
-  "SAMPLE_29" = "TreatmentB_3_2",
-  "SAMPLE_30" = "TreatmentB_3_3"
+ # etc.
 )
 
 # Rename only columns that exist
@@ -124,38 +95,19 @@ list(
   gene_summaries = gene_summaries
 )
 
-# remove low count samples
-# EDIT: this is a decision point — look at qc_summary / qc_list above (total
-# reads, detected genes, percent of library) and decide which samples (if any)
-# should be dropped before fitting the model. The example below shows an entire
-# treatment group (TreatmentB) failing QC and being removed at every timepoint —
-# this is exactly the kind of mid-pipeline decision the QC step is meant to
-# surface. Replace these names with whatever samples your own QC flags; don't
-# copy them verbatim.
+# Drop low-count samples based on qc_summary/qc_list above
 counts <- counts[, colnames(counts) != "TreatmentB_1_1"]
 counts <- counts[, colnames(counts) != "TreatmentB_1_2"]
-counts <- counts[, colnames(counts) != "TreatmentB_1_3"]
-counts <- counts[, colnames(counts) != "TreatmentB_3_1"]
-counts <- counts[, colnames(counts) != "TreatmentB_3_2"]
-counts <- counts[, colnames(counts) != "TreatmentB_3_3"]
-counts <- counts[, colnames(counts) != "TreatmentB_2_1"]
-counts <- counts[, colnames(counts) != "TreatmentB_2_2"]
-counts <- counts[, colnames(counts) != "TreatmentB_2_3"]
 
-#Save/load checkpoint
-# Filename encodes the QC decision above (which samples were dropped) so later
-# scripts/analyses stay traceable — adjust the tag to reflect your own decision.
-# saveRDS(counts, "projects/PROJECT_NAME/data/r_objects/counts_filtered.rds")
-counts <- readRDS("projects/PROJECT_NAME/data/r_objects/counts_filtered.rds")
 
+# Save/load checkpoint
+# save_checkpoint(counts, "counts_filtered", dir = "projects/YOUR_PROJECT_NAME/data/r_objects")
+counts <- load_checkpoint("counts_filtered", dir = "projects/YOUR_PROJECT_NAME/data/r_objects")
+ 
 # ---- set up deseq2 object ----
 sample_names <- colnames(counts)
 
-# Derive `condition` directly from the `condition_replicate` names chosen in
-# rename_map above, by stripping the trailing replicate number. This works for
-# any treatment/timepoint scheme as long as the convention is
-# `<condition>_<replicate>` with a numeric replicate suffix — adjust the regex
-# if your replicate isn't a trailing integer (e.g. "_rep1").
+# Strip trailing replicate number to get condition (e.g. TreatmentA_1_2 -> TreatmentA_1)
 colData <- data.frame(sample = sample_names) |>
   dplyr::mutate(
     condition = sub("_[0-9]+$", "", sample)
@@ -163,8 +115,7 @@ colData <- data.frame(sample = sample_names) |>
 
 rownames(colData) <- colData$sample
 
-# EDIT: set this to your control/reference condition so all contrasts are
-# computed against it.
+# EDIT: set your control/reference condition
 control_condition <- "Control_0"
 colData$condition <- relevel(factor(colData$condition), ref = control_condition)
 
@@ -174,27 +125,24 @@ dds <- DESeq2::DESeqDataSetFromMatrix(
   design    = ~ condition
 )
 
-# Remove low-information genes to reduce noise and speed up fitting
-# EDIT: these are typical starting points (>= 10 counts in at least N samples,
-# where N is often the size of your smallest group) — revisit based on your
-# own sample sizes and sequencing depth.
-keep <- rowSums(DESeq2::counts(dds) >= 10) >= 5
+# Filter low-count genes with edgeR
+keep <- edgeR::filterByExpr(dds, group = colData$condition)
 dds <- dds[keep, ]
 
 # Transform counts for sample-level exploration (PCA)
 vsd <- DESeq2::vst(dds)
 DESeq2::plotPCA(vsd, intgroup = "condition")
 
-# Fit the DESeq2 model; disable outlier replacement for consistent behavior across conditions
+# Fit the model, disable outlier replacement
 dds <- DESeq2::DESeq(dds, minReplicatesForReplace = Inf)
 
 # Inspect the coefficient names to confirm which contrasts exist
 coef_names <- DESeq2::resultsNames(dds)
 
-# Keep only coefficients that represent contrasts against the control reference
+# Keep only coefficients vs control
 coef_names_vs_ref <- coef_names[grep(paste0("vs_", control_condition), coef_names)]
 
-# Shrink log2 fold-changes with apeglm for each vs-control coefficient
+# Shrink LFCs with apeglm for each contrast
 res_shrunk_list <- setNames(
   lapply(coef_names_vs_ref, function(coef_name) {
     DESeq2::lfcShrink(dds, coef = coef_name, type = "apeglm")
@@ -207,22 +155,24 @@ res <- DESeq2::results(dds)
 DESeq2::plotMA(res, ylim = c(-5, 5))
 
 
-#Save/load DESeq object
-# saveRDS(dds, "projects/PROJECT_NAME/data/r_objects/dds_filtered.rds")
-dds <- readRDS("projects/PROJECT_NAME/data/r_objects/dds_filtered.rds")
+# Save/load DESeq object
+# save_checkpoint(dds, "dds_filtered", dir = "projects/PROJECT_NAME/data/r_objects")
+dds <- load_checkpoint("dds_filtered", dir = "projects/PROJECT_NAME/data/r_objects")
 
 # Normalied reads
 dds <- estimateSizeFactors(dds)
 normalized_counts <- counts(dds, normalized=TRUE)
 
+# Save/load normalized counts
+save_checkpoint(normalized_counts, "normalized_counts", dir = "projects/PROJECT_NAME/data/r_objects")
+normalized_counts <- load_checkpoint("normalized_counts", dir = "projects/PROJECT_NAME/data/r_objects")
 
-#Save/load Shrunk Data
-saveRDS(res_shrunk_list, "projects/PROJECT_NAME/results/resShrink.rds")
-res_shrunk_list <- readRDS("projects/PROJECT_NAME/results/resShrink.rds")
+# Save/load Shrunk Data
+save_checkpoint(res_shrunk_list, "res_shrunk_list", dir = "projects/PROJECT_NAME/data/r_objects")
+res_shrunk_list <- load_checkpoint("res_shrunk_list", dir = "projects/PROJECT_NAME/data/r_objects")
 
 
-# ---- ADD mapping of gene names ----
-# Ensembl IDs across contrasts ----
+# ---- Map gene IDs ----
 all_ensembl <- res_shrunk_list |>
   purrr::map(~ rownames(.x)) |>
   unlist(use.names = FALSE) |>
@@ -233,9 +183,7 @@ all_ensembl <- res_shrunk_list |>
 all_ensembl_clean <- sub("\\..*$", "", all_ensembl)
 
 # ---- Build mapping table ----
-# Default below is human (org.Hs.eg.db). For mouse, swap for org.Mm.eg.db
-# (the genesets/ folder also ships a pre-built mouse_gene_map_ensembl_symbol.rds
-# you can read directly instead of querying AnnotationDbi).
+# Human: org.Hs.eg.db. Mouse: org.Mm.eg.db
 gene_map <- AnnotationDbi::select(
   org.Hs.eg.db,
   keys    = all_ensembl_clean,
@@ -262,19 +210,5 @@ res_shrunk_list <- purrr::map(res_shrunk_list, function(df) {
   
 })
 
-saveRDS(res_shrunk_list, "projects/PROJECT_NAME/results/resShrink_annotated.rds")
-res_shrunk_list <- readRDS("projects/PROJECT_NAME/results/resShrink_annotated.rds")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+save_checkpoint(res_shrunk_list, "res_shrunk_list_annotated", dir = "projects/PROJECT_NAME/data/r_objects")
+res_shrunk_list <- load_checkpoint("res_shrunk_list_annotated", dir = "projects/PROJECT_NAME/data/r_objects")
