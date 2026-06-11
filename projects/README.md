@@ -1,7 +1,7 @@
 ## Project repository for all experiments
 
 Each experiment gets its own folder here, containing that experiment's `data/`, `figures/`,
-`results/`, and scripts (mirrors the layout used in `scRNA_pipeline`).
+`results/`.
 
 Experiments can be named for data sources (Plasmidsaurus codes or other company codes used for
 alignment), for collaborations based on data generators, or for specific goals (funding/publication
