@@ -1,14 +1,28 @@
-save_checkpoint <- function(obj, name, dir = "data/checkpoints", compress = TRUE) {
+save_checkpoint <- function(obj, name, dir = "data/r_objects",
+                            lines = NULL, notes = NULL, compress = TRUE) {
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
-  
+
   # Find next version number based on existing files
   existing <- list.files(dir, pattern = paste0("^", name, "_v\\d+\\.rds$"))
   version <- length(existing) + 1
-  
+
   path <- file.path(dir, sprintf("%s_v%02d.rds", name, version))
   saveRDS(obj, path, compress = compress)
-  
+
   message("Saved: ", basename(path))
+
+  # Auto-document the checkpoint. Best-effort: never let this break the save.
+  tryCatch({
+    md_path <- sub("\\.rds$", ".md", path)
+    prov <- capture_provenance()
+    code <- capture_script_lines(lines)
+    render_checkpoint_md(md_path, name, version, obj, prov, code, notes)
+    message("Documented: ", basename(md_path))
+  }, error = function(e) {
+    warning("Could not write checkpoint doc for ", basename(path), ": ",
+            conditionMessage(e), call. = FALSE)
+  })
+
   invisible(path)
 }
 
@@ -36,11 +50,13 @@ list_checkpoints <- function(name = NULL, dir = "data/checkpoints") {
   }
   
   info <- file.info(files)
+  doc <- file.exists(sub("\\.rds$", ".md", files))
   data.frame(
     file    = basename(files),
     version = seq_along(files),
     size_mb = round(info$size / 1e6, 2),
     saved   = format(info$mtime, "%Y-%m-%d %H:%M"),
+    doc     = doc,
     row.names = NULL
   )
 }
