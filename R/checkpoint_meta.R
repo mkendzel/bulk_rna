@@ -210,6 +210,7 @@ describe_default <- function(obj) {
 }
 
 # Assembles the Markdown document and writes it to path.
+# Assembles the Markdown document and writes it to path.
 render_checkpoint_md <- function(path, name, version, obj,
                                  prov, code, notes = NULL) {
   L <- character(0)
@@ -239,17 +240,6 @@ render_checkpoint_md <- function(path, name, version, obj,
   }
   add("")
 
-  if (length(prov$packages) > 0) {
-    add("<details><summary>Full session packages</summary>")
-    add("")
-    add("```")
-    for (p in names(prov$packages)) add(p, " ", prov$packages[[p]])
-    add("```")
-    add("")
-    add("</details>")
-    add("")
-  }
-
   add("## Code")
   if (is.null(code)) {
     add("_No code lines were specified (pass `lines = \"1-30\"` or `lines = c(1:30)`",
@@ -262,6 +252,15 @@ render_checkpoint_md <- function(path, name, version, obj,
     add("```")
   }
   add("")
+
+  if (length(prov$packages) > 0) {
+    add("## Session packages")
+    add("")
+    add("```")
+    for (p in names(prov$packages)) add(p, " ", prov$packages[[p]])
+    add("```")
+    add("")
+  }
 
   writeLines(unlist(L), path)
   invisible(path)
