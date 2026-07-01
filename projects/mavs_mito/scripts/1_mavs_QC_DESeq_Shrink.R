@@ -1,10 +1,13 @@
 # ---- Libraries ----
 library(stringr)
-library(dplyr)
+library(tidyverse)
 library(DESeq2)
 library(ggvenn)
 library(grid)
 library(readxl)
+library(edgeR)
+library(limma)
+
 # ---- Load helper functions ----
 invisible(sapply(list.files("R", full.names = TRUE), source))
 
@@ -222,41 +225,30 @@ save_checkpoint(
 # ---- set up data frame ----
 # Identify count columns
 
-count_cols <- grep("_count$", colnames(expr), value = TRUE)
+expr <- load_checkpoint(
+  "all_samples_updated",
+  dir = "projects/mavs_mito/data/r_objects"
+)
 
-# Subset
-counts <- expr[, c("gene_id", count_cols)]
-
-# Set rownames
-rownames(counts) <- counts$gene_id
-counts$gene_id <- NULL
-
-# Remove "_count" suffix
-colnames(counts) <- sub("_count$", "", colnames(counts))
-
-
-# rename columns to project-specific names.
 
 rename_map <- c(
-  "1_Spleen_D0" = "spleen_mock",
-  "2_Spleen_D7" = "spleen_d7",
-  "3_Brain_D7" = "brain_d7",
-  "4_Spleen_D15" = "spleen_d15",
-  "5_Brain_D15" = "brain_d15",
-  ""
+  "6_X_Spleen_D30" = "6_Spleen_D30",
+  "18_Y_Spleen_D30" = "18_Spleen_D30",
+  "30_Z_Spleen_D30" = "30_Spleen_D30",
+  "42_A_Spleen_D30" = "42_Spleen_D30",
+  "54_B_Spleen_D30" = "54_Spleen_D30"
   # etc.
 )
 
 # Rename only columns that exist
-old <- colnames(counts)
+old <- colnames(expr)
 hits <- intersect(old, names(rename_map))
-colnames(counts)[match(hits, old)] <- unname(rename_map[hits])
+colnames(expr)[match(hits, old)] <- unname(rename_map[hits])
 
-# Checks
-setdiff(names(rename_map), colnames(counts)) # should be character(0) if all expected cols present
-any(duplicated(colnames(counts))) # should be FALSE
-colnames(counts)
-
+# make counts object minus first column of expr
+counts <- expr[, -1]
+counts[is.na(counts)] <- 0 # replace NA values with 0
+unique(is.na(counts$`1_WT_d0`)) # check for NA values in the renamed column
 
 # ---- QC For samples ----
 qc_list <- lapply(colnames(counts), function(s) {
@@ -286,147 +278,331 @@ list(
 )
 
 # Drop low-count samples based on qc_summary/qc_list above
-counts <- counts[, colnames(counts) != "TreatmentB_1_1"]
-counts <- counts[, colnames(counts) != "TreatmentB_1_2"]
+counts <- counts[, colnames(counts) != "6_Spleen_D30"]
+counts <- counts[, colnames(counts) != "42_Spleen_D30"]
+counts <- counts[, colnames(counts) != "18_Spleen_D30"]
 
+#drop old mock
+counts <- counts[, colnames(counts) != "1_Spleen_D0"]
+counts <- counts[, colnames(counts) != "13_Spleen_D0"]
+counts <- counts[, colnames(counts) != "25_Spleen_D0"]
+counts <- counts[, colnames(counts) != "37_Spleen_D0"]
+counts <- counts[, colnames(counts) != "49_Spleen_D0"]
+
+counts <- counts[, colnames(counts) != "10_SpleenMAVSko_D0"]
+counts <- counts[, colnames(counts) != "22_SpleenMAVSko_D0"]
+counts <- counts[, colnames(counts) != "34_SpleenMAVSko_D0"]
+counts <- counts[, colnames(counts) != "46_SpleenMAVSko_D0"]
+counts <- counts[, colnames(counts) != "58_SpleenMAVSko_D0"]
 
 # Save/load checkpoint
-# save_checkpoint(counts, "counts_filtered", dir = "projects/YOUR_PROJECT_NAME/data/r_objects")
-counts <- load_checkpoint(
-  "counts_filtered",
-  dir = "projects/YOUR_PROJECT_NAME/data/r_objects"
+save_checkpoint(counts, "counts_filtered", dir = "projects/mavs_mito/data/r_objects",
+                lines = c(225:293),
+                notes = "Filtered out Spleen samples 6, 18, and 42 at day 30 due to low counts and removed old mock"
 )
 
-# ---- set up deseq2 object ----
-sample_names <- colnames(counts)
+# =============================================
+# --------------- Spleen D0 vs D7 --------------
+# =============================================
+# subset counts to spleen samples only
+counts <- load_checkpoint(
+   "counts_filtered",
+   dir = "projects/mavs_mito/data/r_objects"
+)
 
-# Strip trailing replicate number to get condition (e.g. TreatmentA_1_2 -> TreatmentA_1)
+
+sample_names <- colnames(counts)
 colData <- data.frame(sample = sample_names) |>
   dplyr::mutate(
-    condition = sub("_[0-9]+$", "", sample)
+    condition = sub("^[0-9]+_", "", sample)
   )
-
 rownames(colData) <- colData$sample
 
-# EDIT: set your control/reference condition
-control_condition <- "Control_0"
-colData$condition <- relevel(factor(colData$condition), ref = control_condition)
+spleen_mock_samples <- sample_names[
+   (grepl("Spleen", sample_names) | grepl("_d0$", sample_names)) &
+     !grepl("Brain", sample_names)
+]
 
-dds <- DESeq2::DESeqDataSetFromMatrix(
-  countData = round(as.matrix(counts)),
-  colData = colData,
-  design = ~condition
+counts_spleen <- counts[, spleen_mock_samples]
+
+
+spleen_d0_d7_samples <- colnames(counts_spleen)[
+  grepl("_d0$", colnames(counts_spleen)) | grepl("_D7$", colnames(counts_spleen))
+]
+
+counts_spleen_d0_d7 <- counts_spleen[, spleen_d0_d7_samples]
+
+genotype <- ifelse(grepl("MAVSko|MAVSKO", spleen_d0_d7_samples), "MAVSKO", "WT")
+day <- ifelse(grepl("_d0$", spleen_d0_d7_samples), "D0", "D7")
+
+colData_spleen <- data.frame(
+   sample = spleen_d0_d7_samples,
+   genotype = genotype,
+   day = day,
+   group = factor(paste(genotype, day, sep = "_"))
 )
 
-# Filter low-count genes with edgeR
-keep <- edgeR::filterByExpr(dds, group = colData$condition)
-dds <- dds[keep, ]
+save_checkpoint(colData_spleen, "colData_spleen", dir = "projects/mavs_mito/data/r_objects",
+                lines = c(308:343),
+                notes = "Meta data for spleen D0 vs D7 samples"
+)
 
-# Transform counts for sample-level exploration (PCA)
-vsd <- DESeq2::vst(dds)
-DESeq2::plotPCA(vsd, intgroup = "condition")
+# Limma-voom DE: WT and MAVSKO, naive (D0) vs day 7 post-infection
 
-# Fit the model, disable outlier replacement
-dds <- DESeq2::DESeq(dds, minReplicatesForReplace = Inf)
+mouse_gene_map <- readRDS("genesets/mouse_gene_map_ensembl_symbol.rds")
 
-# Inspect the coefficient names to confirm which contrasts exist
-coef_names <- DESeq2::resultsNames(dds)
+# Check rowname format before stripping versions
+head(rownames(counts_spleen_d0_d7))
 
-# Keep only coefficients vs control
-coef_names_vs_ref <- coef_names[grep(
-  paste0("vs_", control_condition),
-  coef_names
-)]
+# counts_spleen_d0_d7 and colData_spleen built previously
+stopifnot(identical(colnames(counts_spleen_d0_d7), colData_spleen$sample))
 
-# Shrink LFCs with apeglm for each contrast
-res_shrunk_list <- setNames(
-  lapply(coef_names_vs_ref, function(coef_name) {
-    DESeq2::lfcShrink(dds, coef = coef_name, type = "apeglm")
+colData_spleen$group <- factor(colData_spleen$group,
+  levels = c("WT_D0", "MAVSKO_D0", "WT_D7", "MAVSKO_D7")
+)
+table(colData_spleen$group)
+
+# Create DGEList and filter
+dge <- DGEList(counts = as.matrix(counts_spleen_d0_d7), group = colData_spleen$group)
+keep <- filterByExpr(dge, group = colData_spleen$group) # keep genes expressed in at least half of the samples in any group
+dge <- dge[keep, , keep.lib.sizes = FALSE]
+dge <- calcNormFactors(dge)
+
+cat("Genes before filtering:", nrow(counts_spleen_d0_d7), "\n")
+cat("Genes after filtering:", nrow(dge), "\n")
+
+# Design matrix and voom
+design <- model.matrix(~ 0 + group, data = colData_spleen)
+colnames(design) <- levels(colData_spleen$group)
+v <- voom(dge, design, plot = TRUE)
+fit <- lmFit(v, design)
+
+# Contrasts: within-genotype day effects, direct genotype comparison, interaction
+contr_matrix <- makeContrasts(
+  WT_D7_vs_D0 = WT_D7 - WT_D0,
+  MAVSKO_D7_vs_D0 = MAVSKO_D7 - MAVSKO_D0,
+  WT_vs_MAVSKO_D7 = WT_D7 - MAVSKO_D7,
+  interaction = (WT_D7 - WT_D0) - (MAVSKO_D7 - MAVSKO_D0),
+  levels = design
+)
+
+fit2 <- contrasts.fit(fit, contr_matrix)
+fit2 <- eBayes(fit2)
+
+res_voom_spleen_d0_d7 <- setNames(
+  lapply(colnames(contr_matrix), function(coef) {
+    topTable(fit2, coef = coef, number = Inf, sort.by = "none")
   }),
-  coef_names_vs_ref
+  colnames(contr_matrix)
 )
 
-# Quick check of unshrunk MA plot for the default results
-res <- DESeq2::results(dds)
-DESeq2::plotMA(res, ylim = c(-5, 5))
+# Quick sanity check on each contrast
+lapply(res_voom_spleen_d0_d7, function(df) sum(df$adj.P.Val < 0.05))
 
-
-# Save/load DESeq object
-# save_checkpoint(dds, "dds_filtered", dir = "projects/PROJECT_NAME/data/r_objects")
-dds <- load_checkpoint(
-  "dds_filtered",
-  dir = "projects/PROJECT_NAME/data/r_objects"
-)
-
-# Normalied reads
-dds <- estimateSizeFactors(dds)
-normalized_counts <- counts(dds, normalized = TRUE)
-
-# Save/load normalized counts
-save_checkpoint(
-  normalized_counts,
-  "normalized_counts",
-  dir = "projects/PROJECT_NAME/data/r_objects"
-)
-normalized_counts <- load_checkpoint(
-  "normalized_counts",
-  dir = "projects/PROJECT_NAME/data/r_objects"
-)
-
-# Save/load Shrunk Data
-save_checkpoint(
-  res_shrunk_list,
-  "res_shrunk_list",
-  dir = "projects/PROJECT_NAME/data/r_objects"
-)
-res_shrunk_list <- load_checkpoint(
-  "res_shrunk_list",
-  dir = "projects/PROJECT_NAME/data/r_objects"
-)
-
-
-# ---- Map gene IDs ----
-all_ensembl <- res_shrunk_list |>
-  purrr::map(~ rownames(.x)) |>
-  unlist(use.names = FALSE) |>
-  unique() |>
-  as.character()
-
-# Remove version suffix if present (e.g. ENSG00000123456.7)
-all_ensembl_clean <- sub("\\..*$", "", all_ensembl)
-
-# ---- Build mapping table ----
-# Human: org.Hs.eg.db. Mouse: org.Mm.eg.db
-gene_map <- AnnotationDbi::select(
-  org.Hs.eg.db,
-  keys = all_ensembl_clean,
-  keytype = "ENSEMBL",
-  columns = c("ENTREZID", "SYMBOL")
-) |>
-  as_tibble() |>
-  distinct(ENSEMBL, .keep_all = TRUE) |>
-  rename(
-    ensembl_id = ENSEMBL,
-    entrez_id = ENTREZID,
-    SYMBOL = SYMBOL
-  )
-
-# ---- Append identifiers to every contrast ----
-res_shrunk_list <- purrr::map(res_shrunk_list, function(df) {
-  df |>
-    as.data.frame() |>
-    rownames_to_column("ensembl_id") |>
-    mutate(ensembl_id = sub("\\..*$", "", ensembl_id)) |>
-    left_join(gene_map, by = "ensembl_id") |>
+# Annotate with gene symbols
+res_voom_spleen_d0_d7_annotated <- lapply(res_voom_spleen_d0_d7, function(df) {
+  df %>%
+    rownames_to_column("ensembl_id") %>%
+    mutate(ensembl_id = sub("\\..*$", "", ensembl_id)) %>%
+    left_join(
+      mouse_gene_map %>% distinct(ENSEMBL, .keep_all = TRUE),
+      by = c("ensembl_id" = "ENSEMBL")
+    ) %>%
     as_tibble()
 })
 
-save_checkpoint(
-  res_shrunk_list,
-  "res_shrunk_list_annotated",
-  dir = "projects/PROJECT_NAME/data/r_objects"
+# Check annotation join coverage
+lapply(res_voom_spleen_d0_d7_annotated, function(df) sum(is.na(df$SYMBOL)))
+
+# Save
+save_checkpoint(v, "voom_spleen_d0_d7",
+  notes = "voom object for spleen D0 vs D7, WT and MAVSKO. Default filtering 70% of samples in any group. min count = 10",
+  dir = "projects/mavs_mito/data/r_objects",
+  lines = c(309:370)
 )
-res_shrunk_list <- load_checkpoint(
-  "res_shrunk_list_annotated",
-  dir = "projects/PROJECT_NAME/data/r_objects"
+
+save_checkpoint(res_voom_spleen_d0_d7, "res_voom_spleen_d0_d7",
+  notes = "limma-voom DE results for spleen D0 vs D7; named list of topTables (within-genotype day effects, direct genotype comparison at D7, interaction). Default filtering 70% of samples in any group. min count = 10",
+  dir = "projects/mavs_mito/data/r_objects",
+  lines = c(309:370)
+)
+
+save_checkpoint(res_voom_spleen_d0_d7_annotated, "res_voom_spleen_d0_d7_annotated",
+  notes = "Gene Symbol annotated limma-voom DE results for spleen D0 vs D7. Default filtering 70% of samples in any group. min count = 10",
+  dir = "projects/mavs_mito/data/r_objects",
+  lines = c(309:370)
+)
+
+# ---- GSEA Spleen ----
+library(fgsea)
+
+res_voom_spleen_d0_d7_annotated <- load_checkpoint("res_voom_spleen_d0_d7_annotated",
+  dir = "projects/mavs_mito/data/r_objects")
+
+gmt_path <- "genesets/mh.all.v2026.1.Mm.symbols.gmt"
+pathways <- gmtPathways(gmt_path)
+
+res_wt_vs_mavsko_d7 <- res_voom_spleen_d0_d7_annotated[["WT_vs_MAVSKO_D7"]]
+
+fgsea_wt_vs_mavsko_d7 <- run_gsea(res_wt_vs_mavsko_d7, pathways)
+
+# sanity checks
+fgsea_wt_vs_mavsko_d7 %>% select(pathway, NES, pval, padj) %>% head(15)
+
+fgsea_wt_vs_mavsko_d7 %>% filter(grepl("OXIDATIVE_PHOSPHORYLATION|FATTY_ACID|GLYCOLYSIS|HYPOXIA", pathway)) %>%
+  select(pathway, NES, pval, padj)
+
+sum(fgsea_wt_vs_mavsko_d7$padj < 0.05)
+
+save_checkpoint(fgsea_wt_vs_mavsko_d7, "fgsea_wt_vs_mavsko_d7",
+  notes = "GSEA results for WT vs MAVSKO at D7 in spleen. Pathways from MSigDB Hallmark gene sets (v2026.1).",
+  dir = "projects/mavs_mito/data/r_objects",
+  lines = c(394:412)
+)
+
+# =============================================
+# --------------- Brain D0 vs D7 ---------------
+# =============================================
+counts <- load_checkpoint(
+  "counts_filtered",
+  dir = "projects/mavs_mito/data/r_objects"
+)
+
+sample_names <- colnames(counts)
+
+brain_mock_samples <- sample_names[
+  (grepl("Brain", sample_names) | grepl("_d0$", sample_names)) &
+    !grepl("Spleen", sample_names)
+]
+
+counts_brain <- counts[, brain_mock_samples]
+
+brain_d0_d7_samples <- colnames(counts_brain)[
+  grepl("_d0$", colnames(counts_brain)) | grepl("_D7$", colnames(counts_brain))
+]
+
+counts_brain_d0_d7 <- counts_brain[, brain_d0_d7_samples]
+
+genotype <- ifelse(grepl("MAVSko|MAVSKO", brain_d0_d7_samples), "MAVSKO", "WT")
+day <- ifelse(grepl("_d0$", brain_d0_d7_samples), "D0", "D7")
+
+colData_brain <- data.frame(
+  sample = brain_d0_d7_samples,
+  genotype = genotype,
+  day = day,
+  group = factor(paste(genotype, day, sep = "_"))
+)
+
+save_checkpoint(colData_brain, "colData_brain", dir = "projects/mavs_mito/data/r_objects",
+                lines = c(463:496),
+                notes = "Meta data for brain D0 vs D7 samples"
+)
+
+# Limma-voom DE: WT and MAVSKO, naive (D0) vs day 7 post-infection
+
+mouse_gene_map <- readRDS("genesets/mouse_gene_map_ensembl_symbol.rds")
+
+head(rownames(counts_brain_d0_d7))
+
+stopifnot(identical(colnames(counts_brain_d0_d7), colData_brain$sample))
+
+colData_brain$group <- factor(colData_brain$group,
+  levels = c("WT_D0", "MAVSKO_D0", "WT_D7", "MAVSKO_D7")
+)
+table(colData_brain$group)
+
+# Create DGEList and filter
+dge <- DGEList(counts = as.matrix(counts_brain_d0_d7), group = colData_brain$group)
+keep <- filterByExpr(dge, group = colData_brain$group)
+dge <- dge[keep, , keep.lib.sizes = FALSE]
+dge <- calcNormFactors(dge)
+
+cat("Genes before filtering:", nrow(counts_brain_d0_d7), "\n")
+cat("Genes after filtering:", nrow(dge), "\n")
+
+# Design matrix and voom
+design <- model.matrix(~ 0 + group, data = colData_brain)
+colnames(design) <- levels(colData_brain$group)
+v <- voom(dge, design, plot = TRUE)
+fit <- lmFit(v, design)
+
+# Contrasts: within-genotype day effects, direct genotype comparison, interaction
+contr_matrix <- makeContrasts(
+  WT_D7_vs_D0 = WT_D7 - WT_D0,
+  MAVSKO_D7_vs_D0 = MAVSKO_D7 - MAVSKO_D0,
+  WT_vs_MAVSKO_D7 = WT_D7 - MAVSKO_D7,
+  interaction = (WT_D7 - WT_D0) - (MAVSKO_D7 - MAVSKO_D0),
+  levels = design
+)
+
+fit2 <- contrasts.fit(fit, contr_matrix)
+fit2 <- eBayes(fit2)
+
+res_voom_brain_d0_d7 <- setNames(
+  lapply(colnames(contr_matrix), function(coef) {
+    topTable(fit2, coef = coef, number = Inf, sort.by = "none")
+  }),
+  colnames(contr_matrix)
+)
+
+# Quick sanity check on each contrast
+lapply(res_voom_brain_d0_d7, function(df) sum(df$adj.P.Val < 0.05))
+
+# Annotate with gene symbols
+res_voom_brain_d0_d7_annotated <- lapply(res_voom_brain_d0_d7, function(df) {
+  df %>%
+    rownames_to_column("ensembl_id") %>%
+    mutate(ensembl_id = sub("\\..*$", "", ensembl_id)) %>%
+    left_join(
+      mouse_gene_map %>% distinct(ENSEMBL, .keep_all = TRUE),
+      by = c("ensembl_id" = "ENSEMBL")
+    ) %>%
+    as_tibble()
+})
+
+# Check annotation join coverage
+lapply(res_voom_brain_d0_d7_annotated, function(df) sum(is.na(df$SYMBOL)))
+
+# Save
+save_checkpoint(v, "voom_brain_d0_d7",
+  notes = "voom object for brain D0 vs D7, WT and MAVSKO. Default filtering 70% of samples in any group. min count = 10",
+  dir = "projects/mavs_mito/data/r_objects",
+  lines = c(463:549)
+)
+
+save_checkpoint(res_voom_brain_d0_d7, "res_voom_brain_d0_d7",
+  notes = "limma-voom DE results for brain D0 vs D7; named list of topTables (within-genotype day effects, direct genotype comparison at D7, interaction). Default filtering 70% of samples in any group. min count = 10",
+  dir = "projects/mavs_mito/data/r_objects",
+  lines = c(463:549)
+)
+
+save_checkpoint(res_voom_brain_d0_d7_annotated, "res_voom_brain_d0_d7_annotated",
+  notes = "Gene Symbol annotated limma-voom DE results for brain D0 vs D7. Default filtering 70% of samples in any group. min count = 10",
+  dir = "projects/mavs_mito/data/r_objects",
+  lines = c(463:549)
+)
+
+# ---- GSEA ----
+res_voom_brain_d0_d7_annotated <- load_checkpoint("res_voom_brain_d0_d7_annotated",
+  dir = "projects/mavs_mito/data/r_objects")
+
+gmt_path <- "genesets/mh.all.v2026.1.Mm.symbols.gmt"
+pathways <- gmtPathways(gmt_path)
+
+res_wt_vs_mavsko_d7_brain <- res_voom_brain_d0_d7_annotated[["WT_vs_MAVSKO_D7"]]
+
+fgsea_wt_vs_mavsko_d7_brain <- run_gsea(res_wt_vs_mavsko_d7_brain, pathways)
+
+# sanity checks
+fgsea_wt_vs_mavsko_d7_brain %>% select(pathway, NES, pval, padj) %>% head(15)
+
+fgsea_wt_vs_mavsko_d7_brain %>% filter(grepl("OXIDATIVE_PHOSPHORYLATION|FATTY_ACID|GLYCOLYSIS|HYPOXIA", pathway)) %>%
+  select(pathway, NES, pval, padj)
+
+sum(fgsea_wt_vs_mavsko_d7_brain$padj < 0.05)
+
+save_checkpoint(fgsea_wt_vs_mavsko_d7_brain, "fgsea_wt_vs_mavsko_d7_brain",
+  notes = "GSEA results for WT vs MAVSKO at D7 in brain. Pathways from MSigDB Hallmark gene sets (v2026.1).",
+  dir = "projects/mavs_mito/data/r_objects",
+  lines = c(551:572)
 )
