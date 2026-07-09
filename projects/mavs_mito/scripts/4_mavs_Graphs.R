@@ -287,7 +287,83 @@ draw_panel("HALLMARK_E2F_TARGETS", "E2F Targets",
 
 # ---- Scatter plot of WT vs MAVS-KO fold changes, colored by significance ----
 # +
+wt_res <- res_voom_spleen_d0_d7_annotated$WT_D7_vs_D0
+ko_res <- res_voom_spleen_d0_d7_annotated$MAVSKO_D7_vs_D0
 
+# merge WT and MAVS-KO results on ensembl_id, keep relevant columns
+merged_fc <- merge(
+  wt_res[, c("ensembl_id", "SYMBOL", "logFC", "adj.P.Val", "P.Value")],
+  ko_res[, c("ensembl_id", "logFC", "adj.P.Val", "P.Value")],
+  by = "ensembl_id",
+  suffixes = c("_WT", "_KO")
+)
+
+# classify genes by significance (FDR < 0.05) and effect size (|logFC| > 2) in each contrast
+sig_wt <- merged_fc$adj.P.Val_WT < 0.05 & abs(merged_fc$logFC_WT) > 2
+sig_ko <- merged_fc$adj.P.Val_KO < 0.05 & abs(merged_fc$logFC_KO) > 2
+
+# (optional): fiter
+# sig_wt <- merged_fc$P.Value_WT < 0.01 & abs(merged_fc$logFC_WT) > 2
+# sig_ko <- merged_fc$P.Value_KO < 0.01 & abs(merged_fc$logFC_KO) > 2
+
+merged_fc$category <- "Not Significant"
+merged_fc$category[sig_wt & sig_ko] <- "Both"
+merged_fc$category[sig_wt & !sig_ko] <- "WT only"
+merged_fc$category[!sig_wt & sig_ko] <- "Mavs-/- only"
+
+merged_fc$category <- factor(
+  merged_fc$category,
+  levels = c("Not Significant", "Mavs-/- only", "Both", "WT only")
+)
+merged_fc <- merged_fc[order(merged_fc$category), ]
+
+category_colors <- c(
+  "Not Significant" = "grey80",
+  "Mavs-/- only" = "firebrick",
+  "Both" = "orange",
+  "WT only" = "forestgreen"
+)
+
+# count genes per category for on-plot labels
+counts <- table(merged_fc$category)
+
+x_range <- range(merged_fc$logFC_WT, na.rm = TRUE)
+y_range <- range(merged_fc$logFC_KO, na.rm = TRUE)
+
+label_df <- data.frame(
+  x = c(x_range[2] * 0.75, x_range[1] * 0.75, x_range[2] * 0.55),
+  y = c(y_range[2] * 0.9, y_range[2] * 0.5, y_range[1] * 0.75),
+  label = c(
+    paste0("Both\n(", counts["Both"], ")"),
+    paste0("Mavs-/- only\n(", counts["Mavs-/- only"], ")"),
+    paste0("WT only\n(", counts["WT only"], ")")
+  ),
+  color = c(category_colors["Both"], category_colors["Mavs-/- only"], category_colors["WT only"])
+)
+
+p <- ggplot(merged_fc, aes(x = logFC_WT, y = logFC_KO)) +
+  geom_hline(yintercept = c(-2, 2), linetype = "dashed", color = "grey40", linewidth = 0.4) +
+  geom_vline(xintercept = c(-2, 2), linetype = "dashed", color = "grey40", linewidth = 0.4) +
+  geom_abline(slope = 1, intercept = 0, color = "black", linewidth = 0.5) +
+  geom_point(aes(fill = category), shape = 21, color = "black", size = 2, stroke = 0.15, alpha = 0.85) +
+  geom_text(
+    data = label_df,
+    aes(x = x, y = y, label = label, color = I(color)),
+    fontface = "bold", size = 4, inherit.aes = FALSE
+  ) +
+  scale_fill_manual(values = category_colors, name = NULL) +
+  labs(
+    x = "WT Fold Change (log2)",
+    y = "Mavs-/- Fold Change (log2)"
+  ) +
+  theme_classic(base_size = 14) +
+  theme(
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "black"),
+    legend.position = "right"
+  )
+
+p
 
 # ====
 
