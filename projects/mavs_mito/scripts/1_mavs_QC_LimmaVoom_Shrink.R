@@ -606,3 +606,135 @@ save_checkpoint(fgsea_wt_vs_mavsko_d7_brain, "fgsea_wt_vs_mavsko_d7_brain",
   dir = "projects/mavs_mito/data/r_objects",
   lines = c(551:572)
 )
+
+# =============================================
+# ------ Brain D7 vs Spleen D7 (ref = Spleen) ------
+# =============================================
+counts <- load_checkpoint("counts_filtered", dir = "projects/mavs_mito/data/r_objects")
+sample_names <- colnames(counts)
+
+# All D7 spleen + brain samples, both genotypes
+d7_tissue_samples <- sample_names[
+  grepl("_D7$", sample_names) &
+    (grepl("Spleen", sample_names) | grepl("Brain", sample_names))
+]
+counts_d7_tissue <- counts[, d7_tissue_samples]
+
+genotype <- ifelse(grepl("MAVSko|MAVSKO", d7_tissue_samples), "MAVSKO", "WT")
+tissue   <- ifelse(grepl("Brain", d7_tissue_samples), "Brain", "Spleen")
+
+colData_d7_tissue <- data.frame(
+  sample   = d7_tissue_samples,
+  genotype = genotype,
+  tissue   = tissue,
+  # Spleen listed first so it is the reference level within each genotype
+  group    = factor(paste(genotype, tissue, sep = "_"),
+                    levels = c("WT_Spleen", "WT_Brain", "MAVSKO_Spleen", "MAVSKO_Brain"))
+)
+stopifnot(identical(colnames(counts_d7_tissue), colData_d7_tissue$sample))
+table(colData_d7_tissue$group)   # expect 5 each
+
+save_checkpoint(colData_d7_tissue, "colData_d7_tissue", dir = "projects/mavs_mito/data/r_objects",
+                lines = c(614:636),
+                notes = "Meta data for Brain vs Spleen D7 tissue comparison (both genotypes)")
+
+# Limma-voom DE: Brain vs Spleen at day 7, WT and MAVSKO separately
+
+mouse_gene_map <- readRDS("genesets/mouse_gene_map_ensembl_symbol.rds")
+
+head(rownames(counts_d7_tissue))
+
+# DGEList + filter (group-aware), voom, fit
+dge  <- DGEList(counts = as.matrix(counts_d7_tissue), group = colData_d7_tissue$group)
+keep <- filterByExpr(dge, group = colData_d7_tissue$group)
+dge  <- calcNormFactors(dge[keep, , keep.lib.sizes = FALSE])
+
+cat("Genes before filtering:", nrow(counts_d7_tissue), "\n")
+cat("Genes after filtering:", nrow(dge), "\n")
+
+design <- model.matrix(~ 0 + group, data = colData_d7_tissue)
+colnames(design) <- levels(colData_d7_tissue$group)
+v   <- voom(dge, design, plot = TRUE)
+fit <- lmFit(v, design)
+
+# Brain - Spleen within each genotype (Spleen = reference)
+contr_matrix <- makeContrasts(
+  WT_Brain_vs_Spleen     = WT_Brain     - WT_Spleen,
+  MAVSKO_Brain_vs_Spleen = MAVSKO_Brain - MAVSKO_Spleen,
+  levels = design
+)
+fit2 <- eBayes(contrasts.fit(fit, contr_matrix))
+
+res_voom_d7_tissue <- setNames(
+  lapply(colnames(contr_matrix), function(coef) {
+    topTable(fit2, coef = coef, number = Inf, sort.by = "none")
+  }),
+  colnames(contr_matrix)
+)
+
+# Quick sanity check on each contrast
+lapply(res_voom_d7_tissue, function(df) sum(df$adj.P.Val < 0.05))
+
+# Annotate with gene symbols (same join used elsewhere)
+res_voom_d7_tissue_annotated <- lapply(res_voom_d7_tissue, function(df) {
+  df %>%
+    rownames_to_column("ensembl_id") %>%
+    mutate(ensembl_id = sub("\\..*$", "", ensembl_id)) %>%
+    left_join(
+      mouse_gene_map %>% distinct(ENSEMBL, .keep_all = TRUE),
+      by = c("ensembl_id" = "ENSEMBL")
+    ) %>%
+    as_tibble()
+})
+
+# Check annotation join coverage
+lapply(res_voom_d7_tissue_annotated, function(df) sum(is.na(df$SYMBOL)))
+
+# Save
+save_checkpoint(v, "voom_d7_tissue",
+  notes = "voom object: Brain vs Spleen at D7, 4-level genotype_tissue model. Default filtering, min count = 10.",
+  dir = "projects/mavs_mito/data/r_objects",
+  lines = c(614:672)
+)
+
+save_checkpoint(res_voom_d7_tissue, "res_voom_d7_tissue",
+  notes = "limma-voom DE: Brain - Spleen at D7 within WT and within MAVSKO (Spleen = reference). Named list of topTables.",
+  dir = "projects/mavs_mito/data/r_objects",
+  lines = c(614:672)
+)
+
+save_checkpoint(res_voom_d7_tissue_annotated, "res_voom_d7_tissue_annotated",
+  notes = "Gene Symbol annotated Brain - Spleen D7 DE (WT and MAVSKO).",
+  dir = "projects/mavs_mito/data/r_objects",
+  lines = c(614:672)
+)
+
+# ---- GSEA: Brain vs Spleen D7 (Hallmark) ----
+res_voom_d7_tissue_annotated <- load_checkpoint("res_voom_d7_tissue_annotated",
+  dir = "projects/mavs_mito/data/r_objects")
+
+gmt_path <- "genesets/mh.all.v2026.1.Mm.symbols.gmt"
+pathways <- gmtPathways(gmt_path)
+
+fgsea_wt_brain_vs_spleen_d7     <- run_gsea(res_voom_d7_tissue_annotated[["WT_Brain_vs_Spleen"]], pathways)
+fgsea_mavsko_brain_vs_spleen_d7 <- run_gsea(res_voom_d7_tissue_annotated[["MAVSKO_Brain_vs_Spleen"]], pathways)
+
+# sanity checks (positive NES = enriched in Brain relative to Spleen)
+fgsea_wt_brain_vs_spleen_d7 %>% select(pathway, NES, pval, padj) %>% head(15)
+fgsea_mavsko_brain_vs_spleen_d7 %>% select(pathway, NES, pval, padj) %>% head(15)
+
+sum(fgsea_wt_brain_vs_spleen_d7$padj < 0.05)
+sum(fgsea_mavsko_brain_vs_spleen_d7$padj < 0.05)
+
+save_checkpoint(fgsea_wt_brain_vs_spleen_d7, "fgsea_wt_brain_vs_spleen_d7",
+  notes = "GSEA Brain vs Spleen at D7, WT (Spleen = ref). MSigDB Hallmark gene sets (v2026.1).",
+  dir = "projects/mavs_mito/data/r_objects",
+  lines = c(688:703)
+)
+
+save_checkpoint(fgsea_mavsko_brain_vs_spleen_d7, "fgsea_mavsko_brain_vs_spleen_d7",
+  notes = "GSEA Brain vs Spleen at D7, MAVSKO (Spleen = ref). MSigDB Hallmark gene sets (v2026.1).",
+  dir = "projects/mavs_mito/data/r_objects",
+  lines = c(688:703)
+)
+
