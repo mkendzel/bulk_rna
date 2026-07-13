@@ -217,7 +217,7 @@ ggsave(filename = "projects/mavs_mito/figures/raw/spleen_genes_barplot.pdf",
 # ---- GSEA Curves ----
 # ==========================
 
-
+#+
 tt <- res_voom_spleen_d0_d7_annotated$WT_vs_MAVSKO_D7
 tt <- tt[!is.na(tt$SYMBOL) & tt$SYMBOL != "", ]
 tt <- tt[order(tt$AveExpr, decreasing = TRUE), ]
@@ -280,11 +280,15 @@ draw_panel <- function(id, title, ranks, pathways, fgsea_res) {
   text(r$n, 1, "Mavs-/-", adj = c( 1.15, 0.5), col = "white", font = 2, cex = 1.6)
 }
 
-# Call once per pathway, one figure at a time
+# Call once per pathway, one figure at a time (base graphics: draw straight to a device)
+cairo_pdf(
+  filename = "projects/mavs_mito/figures/raw/spleen_gsea_E2F.pdf",
+  width = 6, height = 6
+)
 draw_panel("HALLMARK_E2F_TARGETS", "E2F Targets",
            ranks, pathways, fgsea_wt_vs_mavsko_d7)
-
-
+dev.off()
+#====
 # ---- Scatter plot of WT vs MAVS-KO fold changes, colored by significance ----
 # +
 wt_res <- res_voom_spleen_d0_d7_annotated$WT_D7_vs_D0
@@ -331,14 +335,10 @@ x_range <- range(merged_fc$logFC_WT, na.rm = TRUE)
 y_range <- range(merged_fc$logFC_KO, na.rm = TRUE)
 
 label_df <- data.frame(
-  x = c(x_range[2] * 0.75, x_range[1] * 0.75, x_range[2] * 0.55),
-  y = c(y_range[2] * 0.9, y_range[2] * 0.5, y_range[1] * 0.75),
-  label = c(
-    paste0("Both\n(", counts["Both"], ")"),
-    paste0("Mavs-/- only\n(", counts["Mavs-/- only"], ")"),
-    paste0("WT only\n(", counts["WT only"], ")")
-  ),
-  color = c(category_colors["Both"], category_colors["Mavs-/- only"], category_colors["WT only"])
+  x = x_range[2] * 0.75,
+  y = y_range[2] * 0.9,
+  label = paste0("Both\n(", counts["Both"], ")"),
+  color = category_colors["Both"]
 )
 
 p <- ggplot(merged_fc, aes(x = logFC_WT, y = logFC_KO)) +
@@ -360,15 +360,149 @@ p <- ggplot(merged_fc, aes(x = logFC_WT, y = logFC_KO)) +
   theme(
     axis.title = element_text(face = "bold"),
     axis.text = element_text(color = "black"),
-    legend.position = "right"
+    legend.position = "none"
   )
 
 p
 
+# directional counts using the significance masks above
+# directional breakdown of the plot categories
+count_table <- data.frame(
+  Category = c(
+    "WT only - Up", "WT only - Down",
+    "Mavs-/- only - Up", "Mavs-/- only - Down",
+    "Both"
+  ),
+  Genes = c(
+    sum(merged_fc$category == "WT only" & merged_fc$logFC_WT > 0),
+    sum(merged_fc$category == "WT only" & merged_fc$logFC_WT < 0),
+    sum(merged_fc$category == "Mavs-/- only" & merged_fc$logFC_KO > 0),
+    sum(merged_fc$category == "Mavs-/- only" & merged_fc$logFC_KO < 0),
+    sum(merged_fc$category == "Both")
+  )
+)
+print(count_table)
+
+ggsave(
+  filename = "projects/mavs_mito/figures/raw/spleen_WT_vs_MAVSKO_FC_scatter.pdf",
+  plot     = p,
+  width    = 6, height = 5, units = "in",
+  dpi      = 300,
+  device   = cairo_pdf
+)
 # ====
 
 # ========================
-# ---- Cellular stress response heatmap ----
+# ---- Specific gene scatter plots ----
+library(ggplot2)
+library(ggrepel)
+
+# merge WT and MAVS-KO results on ensembl_id, keep relevant columns
+wt_res <- res_voom_spleen_d0_d7_annotated$WT_D7_vs_D0
+ko_res <- res_voom_spleen_d0_d7_annotated$MAVSKO_D7_vs_D0
+
+merged_fc <- merge(
+  wt_res[, c("ensembl_id", "SYMBOL", "logFC", "adj.P.Val", "P.Value")],
+  ko_res[, c("ensembl_id", "logFC", "adj.P.Val", "P.Value")],
+  by = "ensembl_id",
+  suffixes = c("_WT", "_KO")
+)
+
+geneset_dir <- "genesets/mavs_mito_genesets"
+
+# read one gene symbol per line, drop blank lines
+read_gene_list <- function(path) {
+  g <- trimws(readLines(path, warn = FALSE))
+  g[nzchar(g)]
+}
+
+terminal_effector_genes <- read_gene_list(file.path(geneset_dir, "Goldrath_effector.lists"))
+memory_precursor_genes  <- read_gene_list(file.path(geneset_dir, "Goldrathmemory.lists"))
+
+# genes annotated by name on each plot
+te_label_genes <- c("Gzmb", "Klrg1", "Prf1", "Ifng")
+mp_label_genes <- c("Eomes", "Il15", "Cd44", "Id2")
+
+# case-insensitive membership test against annotated symbols
+in_set <- function(symbols, gene_set) toupper(symbols) %in% toupper(gene_set)
+
+# report how many set genes are present in the merged results
+report_overlap <- function(df, gene_set, name) {
+  n_match <- sum(toupper(gene_set) %in% unique(toupper(df$SYMBOL)))
+  message(sprintf("%s: %d of %d genes matched in merged_fc", name, n_match, length(gene_set)))
+}
+
+report_overlap(merged_fc, terminal_effector_genes, "Terminal effector")
+report_overlap(merged_fc, memory_precursor_genes, "Memory precursor")
+
+plot_signature_scatter <- function(df, sig_genes, label_genes,
+                                   highlight_color, x_lab, y_lab) {
+  # flag signature membership and draw background points first
+  df$highlight <- ifelse(in_set(df$SYMBOL, sig_genes), "sig", "bg")
+  df <- df[order(df$highlight), ]
+
+  label_df <- df[in_set(df$SYMBOL, label_genes), ]
+
+  ggplot(df, aes(x = logFC_WT, y = logFC_KO)) +
+    geom_hline(yintercept = c(-2, 2), linetype = "solid", color = "grey40", linewidth = 0.4) +
+    geom_vline(xintercept = c(-2, 2), linetype = "solid", color = "grey40", linewidth = 0.4) +
+    geom_abline(slope = 1, intercept = 0, color = "black", linewidth = 0.5) +
+    geom_point(
+      data = subset(df, highlight == "bg"),
+      fill = "grey80", shape = 21, color = "black", size = 2, stroke = 0.15, alpha = 0.6
+    ) +
+    geom_point(
+      data = subset(df, highlight == "sig"),
+      fill = highlight_color, shape = 21, color = "black", size = 2.4, stroke = 0.2, alpha = 0.9
+    ) +
+    geom_text_repel(
+      data = label_df,
+      aes(label = SYMBOL),
+      size = 3.5, fontface = "italic",
+      min.segment.length = 0, segment.color = "grey30", segment.size = 0.3,
+      box.padding = 0.5, point.padding = 0.3, max.overlaps = Inf, seed = 1
+    ) +
+    labs(x = x_lab, y = y_lab) +
+    theme_classic(base_size = 14) +
+    theme(
+      axis.title = element_text(face = "bold"),
+      axis.text = element_text(color = "black"),
+      legend.position = "none"
+    )
+}
+
+p_te <- plot_signature_scatter(
+  merged_fc, terminal_effector_genes, te_label_genes,
+  highlight_color = "purple3",
+  x_lab = "WT Fold Change (log2)", y_lab = "Mavs-/- Fold Change (log2)"
+)
+
+p_mp <- plot_signature_scatter(
+  merged_fc, memory_precursor_genes, mp_label_genes,
+  highlight_color = "deeppink3",
+  x_lab = "WT Fold Change (log2)", y_lab = "Mavs-/- Fold Change (log2)"
+)
+
+p_te
+p_mp
+ggsave(
+  filename = "projects/mavs_mito/figures/raw/spleen_terminal_effector_scatter.pdf",
+  plot     = p_te,
+  width    = 3, height = 3, units = "in",
+  dpi      = 300,
+  device   = cairo_pdf
+)
+
+ggsave(
+  filename = "projects/mavs_mito/figures/raw/spleen_memory_precursor_scatter.pdf",
+  plot     = p_mp,
+  width    = 3, height = 3, units = "in",
+  dpi      = 300,
+  device   = cairo_pdf
+)
+
+
+# ---- Effector functions heatmap ----
 #+
 wt_res <- res_voom_spleen_d0_d7_annotated$WT_D7_vs_D0
 ko_res <- res_voom_spleen_d0_d7_annotated$MAVSKO_D7_vs_D0
@@ -419,7 +553,190 @@ p <- ggplot(heatmap_df, aes(x = group, y = SYMBOL, fill = logFC)) +
   )
 
 p
+ggsave(
+  filename = "projects/mavs_mito/figures/raw/spleen_effector_functions_heatmap.pdf",
+  plot     = p,
+  width    = 3, height = 6, units = "in",
+  dpi      = 300,
+  device   = cairo_pdf
+)
+# ====
 
+# ========================
+# ---- Activating receptors heatmap ----
+#+
+# genes for activating receptors heatmap, in display order (top to bottom)
+activating_genes <- c(
+  "Itgae", "Il2rg", "Cd27", "Icos", "Cd69",
+  "Cd44", "Il2ra", "Klrg1", "Itgax", "Klrk1"
+)
+
+# pull logFC and adj.P.Val for each gene from both contrasts, using SYMBOL to subset
+wt_sub <- wt_res[wt_res$SYMBOL %in% activating_genes, c("SYMBOL", "logFC", "adj.P.Val")]
+ko_sub <- ko_res[ko_res$SYMBOL %in% activating_genes, c("SYMBOL", "logFC", "adj.P.Val")]
+
+wt_sub$group <- "WT"
+ko_sub$group <- "Mavs-/-"
+
+heatmap_df <- rbind(wt_sub, ko_sub)
+
+# ensure every gene has a row for both groups, filling missing genes with NA
+full_grid <- expand.grid(SYMBOL = activating_genes, group = c("WT", "Mavs-/-"))
+heatmap_df <- merge(full_grid, heatmap_df, by = c("SYMBOL", "group"), all.x = TRUE)
+
+# set logFC to NA for genes that are not significant,
+# so they render as black tiles alongside genes missing from the topTable entirely
+heatmap_df$logFC[heatmap_df$adj.P.Val >= 0.05] <- NA
+
+# set factor levels to control row and column order in the plot
+heatmap_df$SYMBOL <- factor(heatmap_df$SYMBOL, levels = rev(activating_genes))
+heatmap_df$group <- factor(heatmap_df$group, levels = c("WT", "Mavs-/-"))
+
+p <- ggplot(heatmap_df, aes(x = group, y = SYMBOL, fill = logFC)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  scale_fill_gradientn(
+    colors = c("blue", "lightblue", "gray", "yellow", "red"),
+    values = scales::rescale(c(-10, -2.50, 0, 2.5, 10)),
+    limits = c(-10, 10),
+    na.value = "black",
+    name = "Fold Change\n(log2)"
+  ) +
+  labs(title = "Activating\nReceptors", x = NULL, y = NULL) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.y = element_text(face = "italic", color = "black"),
+    axis.text.x = element_text(face = "bold", color = "black"),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+
+p
+ggsave(
+  filename = "projects/mavs_mito/figures/raw/spleen_activating_receptors_heatmap.pdf",
+  plot     = p,
+  width    = 3, height = 6, units = "in",
+  dpi      = 300,
+  device   = cairo_pdf
+)
+# ====
+
+# ========================
+# ---- Cellular stress response heatmap ----
+#+
+# genes for cellular stress response heatmap, in display order (top to bottom)
+stress_genes <- c(
+  "Atf4", "Arnt", "Hif1a", "Atf5", "Nt5e", "Atf6",
+  "Ddit3", "Eif2ak2", "Hspa1b", "Hspa1a", "Bhlhe40", "Asns"
+)
+
+# pull logFC and adj.P.Val for each gene from both contrasts, using SYMBOL to subset
+wt_sub <- wt_res[wt_res$SYMBOL %in% stress_genes, c("SYMBOL", "logFC", "adj.P.Val")]
+ko_sub <- ko_res[ko_res$SYMBOL %in% stress_genes, c("SYMBOL", "logFC", "adj.P.Val")]
+
+wt_sub$group <- "WT"
+ko_sub$group <- "Mavs-/-"
+
+heatmap_df <- rbind(wt_sub, ko_sub)
+
+# ensure every gene has a row for both groups, filling missing genes with NA
+full_grid <- expand.grid(SYMBOL = stress_genes, group = c("WT", "Mavs-/-"))
+heatmap_df <- merge(full_grid, heatmap_df, by = c("SYMBOL", "group"), all.x = TRUE)
+
+# set logFC to NA for genes that are not significant,
+# so they render as black tiles alongside genes missing from the topTable entirely
+heatmap_df$logFC[heatmap_df$adj.P.Val >= 0.05] <- NA
+
+# set factor levels to control row and column order in the plot
+heatmap_df$SYMBOL <- factor(heatmap_df$SYMBOL, levels = rev(stress_genes))
+heatmap_df$group <- factor(heatmap_df$group, levels = c("WT", "Mavs-/-"))
+
+p <- ggplot(heatmap_df, aes(x = group, y = SYMBOL, fill = logFC)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  scale_fill_gradientn(
+    colors = c("blue", "lightblue", "gray", "yellow", "red"),
+    values = scales::rescale(c(-10, -2.50, 0, 2.5, 10)),
+    limits = c(-10, 10),
+    na.value = "black",
+    name = "Fold Change\n(log2)"
+  ) +
+  labs(title = "Cellular Stress\nResponse", x = NULL, y = NULL) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.y = element_text(face = "italic", color = "black"),
+    axis.text.x = element_text(face = "bold", color = "black"),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+
+p
+ggsave(
+  filename = "projects/mavs_mito/figures/raw/spleen_cellular_stress_response_heatmap.pdf",
+  plot     = p,
+  width    = 3, height = 6, units = "in",
+  dpi      = 300,
+  device   = cairo_pdf
+)
+# ====
+
+# ========================
+# ---- Mitotic spindle heatmap ----
+#+
+# genes for mitotic spindle heatmap, in display order (top to bottom)
+spindle_genes <- c(
+  "Arhgap29", "Tiam1", "Arhgap5", "Kifap3", "Pttg1", "Rapgef5", "Bub1b",
+  "Kif22", "Cdk1", "Ccnb1", "Plk1", "Birc5", "Bub1", "Pif1", "Tpx2"
+)
+
+# pull logFC and adj.P.Val for each gene from both contrasts, using SYMBOL to subset
+wt_sub <- wt_res[wt_res$SYMBOL %in% spindle_genes, c("SYMBOL", "logFC", "adj.P.Val")]
+ko_sub <- ko_res[ko_res$SYMBOL %in% spindle_genes, c("SYMBOL", "logFC", "adj.P.Val")]
+
+wt_sub$group <- "WT"
+ko_sub$group <- "Mavs-/-"
+
+heatmap_df <- rbind(wt_sub, ko_sub)
+
+# ensure every gene has a row for both groups, filling missing genes with NA
+full_grid <- expand.grid(SYMBOL = spindle_genes, group = c("WT", "Mavs-/-"))
+heatmap_df <- merge(full_grid, heatmap_df, by = c("SYMBOL", "group"), all.x = TRUE)
+
+# set logFC to NA for genes that are not significant,
+# so they render as black tiles alongside genes missing from the topTable entirely
+heatmap_df$logFC[heatmap_df$adj.P.Val >= 0.05] <- NA
+
+# set factor levels to control row and column order in the plot
+heatmap_df$SYMBOL <- factor(heatmap_df$SYMBOL, levels = rev(spindle_genes))
+heatmap_df$group <- factor(heatmap_df$group, levels = c("WT", "Mavs-/-"))
+
+p <- ggplot(heatmap_df, aes(x = group, y = SYMBOL, fill = logFC)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  scale_fill_gradientn(
+    colors = c("blue", "lightblue", "gray", "yellow", "red"),
+    values = scales::rescale(c(-10, -2.50, 0, 2.5, 10)),
+    limits = c(-10, 10),
+    na.value = "black",
+    name = "Fold Change\n(log2)"
+  ) +
+  labs(title = "Mitotic\nSpindle", x = NULL, y = NULL) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.y = element_text(face = "italic", color = "black"),
+    axis.text.x = element_text(face = "bold", color = "black"),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+
+p
+ggsave(
+  filename = "projects/mavs_mito/figures/raw/spleen_mitotic_spindle_heatmap.pdf",
+  plot     = p,
+  width    = 3, height = 6, units = "in",
+  dpi      = 300,
+  device   = cairo_pdf
+)
 # ###########################################################################
 # ==== BRAIN GRAPHS ====
 # ###########################################################################
@@ -700,7 +1017,86 @@ p <- ggplot(heatmap_df, aes(x = group, y = SYMBOL, fill = logFC)) +
 p
 
 # ====
-# ---- Template plots ----
+# ==== Brain vs Spleen plots ====
+# ---- Brain vs spleen lolipop ----
+fgsea_wt_brain_vs_spleen_d7     <- load_checkpoint("fgsea_wt_brain_vs_spleen_d7", dir = "projects/mavs_mito/data/r_objects")
+fgsea_mavsko_brain_vs_spleen_d7 <- load_checkpoint("fgsea_mavsko_brain_vs_spleen_d7", dir = "projects/mavs_mito/data/r_objects")
+#+
+# Pathways of interest (raw HALLMARK names)
+pathways_of_interest <- c(
+  "HALLMARK_G2M_CHECKPOINT",
+  "HALLMARK_E2F_TARGETS",
+  "HALLMARK_OXIDATIVE_PHOSPHORYLATION",
+  "HALLMARK_FATTY_ACID_METABOLISM",
+  "HALLMARK_GLYCOLYSIS",
+  "HALLMARK_HYPOXIA"
+)
+
+# Helper to prep fgsea results for plotting
+# pathways: restrict to these raw pathway names (NULL = keep all); only
+#           pathways that are also significant (padj < padj_cutoff) are kept
+prep_gsea_plot <- function(gsea_res, padj_cutoff = 0.05, pathways = NULL) {
+  gsea_res %>%
+    as.data.frame() %>%
+    filter(
+      padj < padj_cutoff,
+      if (is.null(pathways)) TRUE else pathway %in% pathways
+    ) %>%
+    mutate(
+      Direction = ifelse(NES > 0, "Up", "Down"),
+      neg_log10_padj = -log10(padj),
+      # Clean up pathway names for display
+      pathway = gsub("^HALLMARK_", "", pathway),
+      pathway = gsub("_", " ", pathway)
+    ) %>%
+    arrange(NES)
+}
+
+# Plotting function
+# pathways: restrict to these raw pathway names (NULL = keep all)
+plot_gsea <- function(gsea_res, title, padj_cutoff = 0.05, pathways = NULL) {
+  df <- prep_gsea_plot(gsea_res, padj_cutoff, pathways)
+
+  if (nrow(df) == 0) {
+    message("No significant pathways at padj < ", padj_cutoff,
+            if (!is.null(pathways)) " among the selected pathways" else "")
+    return(NULL)
+  }
+  
+  df$pathway <- factor(df$pathway, levels = df$pathway)
+
+  ggplot(df, aes(x = NES, y = pathway)) +
+    geom_segment(aes(x = 0, xend = NES, y = pathway, yend = pathway),
+                 color = "grey60", linewidth = 0.7) +
+    geom_point(aes(size = neg_log10_padj), color = "grey30") +
+    scale_size_continuous(range = c(5, 11)) +
+    labs(
+      x = "Normalized Enrichment Score (NES)",
+      y = NULL,
+      size = "-log10(adj p)",
+      title = title
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.y = element_text(size = 9),
+      plot.title = element_text(face = "bold", size = 12),
+      panel.border = element_rect(color = "grey30", fill = NA, linewidth = 0.7)
+    )
+}
+
+# Generate plots
+p_wt  <- plot_gsea(fgsea_wt_brain_vs_spleen_d7,  "WT GSEA",
+                   pathways = pathways_of_interest)
+p_mavsko  <- plot_gsea(fgsea_mavsko_brain_vs_spleen_d7,  "MAVSKO GSEA",
+                       pathways = pathways_of_interest)
+p_mavsko
+
+# ====
+ggsave(filename = "projects/mavs_mito/figures/raw/mavsko_brain_vs_spleen_d7_outline.pdf",
+       width    = 6, height = 4, units = "in",
+       dpi      = 300,
+       device   = cairo_pdf)
+# ==== Template plots ====
 # ========================
 
 # ---- PCA ----
