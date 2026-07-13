@@ -738,3 +738,4 @@ save_checkpoint(fgsea_mavsko_brain_vs_spleen_d7, "fgsea_mavsko_brain_vs_spleen_d
   lines = c(688:703)
 )
 
+# load checkpoint
