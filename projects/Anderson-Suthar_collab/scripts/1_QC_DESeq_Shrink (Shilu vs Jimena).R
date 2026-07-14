@@ -66,7 +66,7 @@ rename_map_R2SDHF <- c(
 colnames(counts_R2SDHF) <- rename_map_R2SDHF[colnames(counts_R2SDHF)]
 
 counts_R2SDHF <- counts_R2SDHF[, !grepl("^MAD_", colnames(counts_R2SDHF))]
-counts_R2SDHF <- counts_R2SDHF[, !grepl("^ROV_", colnames(counts_R2SDHF))]
+# counts_R2SDHF <- counts_R2SDHF[, !grepl("^ROV_", colnames(counts_R2SDHF))]
 
 # Convert Ensembl IDs to gene symbols
 gene_map <- mapIds(org.Hs.eg.db,
@@ -100,7 +100,7 @@ meta_R2SDHF <- data.frame(
 )
 rownames(meta_R2SDHF) <- meta_R2SDHF$sample
 
-meta_R2SDHF$treatment <- factor(meta_R2SDHF$treatment, levels = c("Mock", "TX"))
+meta_R2SDHF$treatment <- factor(meta_R2SDHF$treatment, levels = c("Mock", "TX", "ROV"))
 meta_R2SDHF$time <- factor(meta_R2SDHF$time)
 meta_R2SDHF$Group <- factor(paste0(meta_R2SDHF$treatment, "_", meta_R2SDHF$time))
 
@@ -138,8 +138,10 @@ v_R2SDHF_sym <- v_R2SDHF$E[names(mapped), ]
 rownames(v_R2SDHF_sym) <- mapped
 
 ### Save/load checkpoint
-saveRDS(v_R2SDHF_sym, "projects/R2SDHF/data/r_objects/R2SDHF.rds")
-v_R2SDHF_sym <- readRDS("projects/R2SDHF/data/r_objects/R2SDHF.rds")
+save_checkpoint(v_R2SDHF_sym, "voom_E_R2SDHF_sym",
+                notes = "Voom expression matrix for R2SDHF with gene symbols as rownames after Ensembl mapping",
+                dir = "projects/R2SDHF/data/r_objects", lines = 128:138)
+# v_R2SDHF_sym <- load_checkpoint("voom_E_R2SDHF_sym", dir = "projects/R2SDHF/data/r_objects")
 
 # ---- R2SDHF LIMMA voom analysis ----
 design <- model.matrix(~ 0 + Group, data = meta_R2SDHF)
@@ -161,6 +163,10 @@ contr <- makeContrasts(
   TX12_vs_Mock = TX_12 - Mock_0,
   TX24_vs_Mock = TX_24 - Mock_0,
   TX48_vs_Mock = TX_48 - Mock_0,
+  ROV12_vs_Mock = ROV_12 - Mock_0,
+  ROV24_vs_Mock = ROV_24 - Mock_0,
+  ROV48_vs_Mock = ROV_48 - Mock_0,
+  ROV48_vs_ROV12 = ROV_48 - ROV_12,
   TX48_vs_TX12 = TX_48 - TX_12,
   levels = design
 )
@@ -172,14 +178,55 @@ fit2 <- eBayes(fit2)
 res_TX12 <- topTable(fit2, coef = "TX12_vs_Mock", number = Inf)
 res_TX24 <- topTable(fit2, coef = "TX24_vs_Mock", number = Inf)
 res_TX48 <- topTable(fit2, coef = "TX48_vs_Mock", number = Inf)
+res_ROV12 <- topTable(fit2, coef = "ROV12_vs_Mock", number = Inf)
+res_ROV24 <- topTable(fit2, coef = "ROV24_vs_Mock", number = Inf)
+res_ROV48 <- topTable(fit2, coef = "ROV48_vs_Mock", number = Inf)
+res_ROV48_vs_ROV12 <- topTable(fit2, coef = "ROV48_vs_ROV12", number = Inf)
 res_TX48_vs_TX12 <- topTable(fit2, coef = "TX48_vs_TX12", number = Inf)
 
-saveRDS(fit2, "projects/R2SDHF/data/r_objects/fit2(R2SDHF).rds")
-saveRDS(v, "projects/R2SDHF/data/r_objects/voom(R2SDHF).rds")
-saveRDS(res_TX12, "projects/R2SDHF/data/r_objects/res_TX12(R2SDHF).rds")
-saveRDS(res_TX24, "projects/R2SDHF/data/r_objects/res_TX24(R2SDHF).rds")
-saveRDS(res_TX48, "projects/R2SDHF/data/r_objects/res_TX48(R2SDHF).rds")
-saveRDS(res_TX48_vs_TX12, "projects/R2SDHF/data/r_objects/res_TX48_vs_TX12(R2SDHF).rds")
+save_checkpoint(fit2, "fit2_R2SDHF",
+                notes = "Limma fit object for R2SDHF data with contrasts for each treatment vs Mock and some pairwise contrasts",
+                dir = "projects/R2SDHF/data/r_objects", lines = c(145:173))
+save_checkpoint(v, "voom_R2SDHF",
+                notes = "Voom object for R2SDHF data after filtering and normalization, with gene symbols as rownames",
+                dir = "projects/R2SDHF/data/r_objects", lines = c(145:173))
+save_checkpoint(res_TX12, "res_TX12_R2SDHF",
+                notes = "DE results for TX 12h vs Mock in R2SDHF data from limma fit",
+                dir = "projects/R2SDHF/data/r_objects", lines = c(145:183))
+save_checkpoint(res_TX24, "res_TX24_R2SDHF",
+                notes = "DE results for TX 24h vs Mock in R2SDHF data from limma fit",
+                dir = "projects/R2SDHF/data/r_objects", lines = c(145:183))
+save_checkpoint(res_TX48, "res_TX48_R2SDHF",
+                notes = "DE results for TX 48h vs Mock in R2SDHF data from limma fit",
+                dir = "projects/R2SDHF/data/r_objects", lines = c(145:183))
+save_checkpoint(res_ROV12, "res_ROV12_R2SDHF",
+                notes = "DE results for ROV 12h vs Mock in R2SDHF data from limma fit",
+                dir = "projects/R2SDHF/data/r_objects", lines = c(145:183))
+save_checkpoint(res_ROV24, "res_ROV24_R2SDHF",
+                notes = "DE results for ROV 24h vs Mock in R2SDHF data from limma fit",
+                dir = "projects/R2SDHF/data/r_objects", lines = c(145:183))
+save_checkpoint(res_ROV48, "res_ROV48_R2SDHF",
+                notes = "DE results for ROV 48h vs Mock in R2SDHF data from limma fit",
+                dir = "projects/R2SDHF/data/r_objects", lines = c(145:183))
+save_checkpoint(res_ROV48_vs_ROV12, "res_ROV48_vs_ROV12_R2SDHF",
+                notes = "DE results for ROV 48h vs ROV 12h in R2SDHF data from limma fit",
+                dir = "projects/R2SDHF/data/r_objects", lines = c(145:183))
+save_checkpoint(res_TX48_vs_TX12, "res_TX48_vs_TX12_R2SDHF",
+                notes = "DE results for TX 48h vs TX 12h in R2SDHF data from limma fit",
+                dir = "projects/R2SDHF/data/r_objects", lines = c(145:183))
+
+# ---- Reload checkpoints (optional) ----
+# fit2          <- load_checkpoint("fit2_R2SDHF",            dir = "projects/R2SDHF/data/r_objects")
+# v             <- load_checkpoint("voom_R2SDHF",            dir = "projects/R2SDHF/data/r_objects")
+# res_TX12      <- load_checkpoint("res_TX12_R2SDHF",        dir = "projects/R2SDHF/data/r_objects")
+# res_TX24      <- load_checkpoint("res_TX24_R2SDHF",        dir = "projects/R2SDHF/data/r_objects")
+# res_TX48      <- load_checkpoint("res_TX48_R2SDHF",        dir = "projects/R2SDHF/data/r_objects")
+# res_ROV12     <- load_checkpoint("res_ROV12_R2SDHF",       dir = "projects/R2SDHF/data/r_objects")
+# res_ROV24     <- load_checkpoint("res_ROV24_R2SDHF",       dir = "projects/R2SDHF/data/r_objects")
+# res_ROV48     <- load_checkpoint("res_ROV48_R2SDHF",       dir = "projects/R2SDHF/data/r_objects")
+# res_ROV48_vs_ROV12 <- load_checkpoint("res_ROV48_vs_ROV12_R2SDHF", dir = "projects/R2SDHF/data/r_objects")
+# res_TX48_vs_TX12   <- load_checkpoint("res_TX48_vs_TX12_R2SDHF",   dir = "projects/R2SDHF/data/r_objects")
+
 
 # ---- FgSEA for R2SDHF ----
 library(fgsea)
@@ -212,10 +259,18 @@ fgsea_TX24 <- run_gsea(res_TX24, pathways)
 fgsea_TX48 <- run_gsea(res_TX48, pathways)
 fgsea_TX48_vs_TX12 <- run_gsea(res_TX48_vs_TX12, pathways)
 
-saveRDS(fgsea_TX12, "projects/R2SDHF/data/r_objects/fgsea_TX12_vs_Mock(R2SDHF).rds")
-saveRDS(fgsea_TX24, "projects/R2SDHF/data/r_objects/fgsea_TX24_vs_Mock(R2SDHF).rds")
-saveRDS(fgsea_TX48, "projects/R2SDHF/data/r_objects/fgsea_TX48_vs_Mock(R2SDHF).rds")
-saveRDS(fgsea_TX48_vs_TX12, "projects/R2SDHF/data/r_objects/fgsea_TX48_vs_TX12(R2SDHF).rds")
+save_checkpoint(fgsea_TX12, "fgsea_TX12_vs_Mock_R2SDHF",
+                notes = "fgsea results for TX 12h vs Mock in R2SDHF data (Hallmark), ranked by limma t-statistic",
+                dir = "projects/R2SDHF/data/r_objects", lines = 226:246)
+save_checkpoint(fgsea_TX24, "fgsea_TX24_vs_Mock_R2SDHF",
+                notes = "fgsea results for TX 24h vs Mock in R2SDHF data (Hallmark), ranked by limma t-statistic",
+                dir = "projects/R2SDHF/data/r_objects", lines = 226:246)
+save_checkpoint(fgsea_TX48, "fgsea_TX48_vs_Mock_R2SDHF",
+                notes = "fgsea results for TX 48h vs Mock in R2SDHF data (Hallmark), ranked by limma t-statistic",
+                dir = "projects/R2SDHF/data/r_objects", lines = 226:246)
+save_checkpoint(fgsea_TX48_vs_TX12, "fgsea_TX48_vs_TX12_R2SDHF",
+                notes = "fgsea results for TX 48h vs TX 12h in R2SDHF data (Hallmark), ranked by limma t-statistic",
+                dir = "projects/R2SDHF/data/r_objects", lines = 226:246)
 # ---- Jimina's data ----
 #### Expression matrix
 # Define base path
@@ -305,7 +360,7 @@ list(
 
 save_checkpoint(counts, "filtered_counts_hSpS_Ctrx",
                 notes = "Raw count matrix for hSPS organoids with Ctrx coating, subset to samples passing QC; rows=genes, cols=samples",
-                dir = "projects/Anderson-Suthar_collab/data/r_objects", lines = c(177:179))
+                dir = "projects/Anderson-Suthar_collab/data/r_objects", lines = c(220:275))
 
 #optional load checkpoint
 # counts <- load_checkpoint("filtered_counts_hSpS_Ctrx", dir = "projects/Anderson-Suthar_collab/data/r_objects")
@@ -328,7 +383,7 @@ dge <- dge[keep, , keep.lib.sizes = FALSE]
 # Normalize
 dge <- calcNormFactors(dge)
 
-# Set up design matrix
+# Set u p design matrix
 design <- model.matrix(~ Sex + Batch + Stage * Line, data = meta_filtered)
 colnames(design) <- make.names(colnames(design))
 
@@ -365,13 +420,34 @@ res_d75 <- topTable(fit2, coef = "d75_ALS", number = Inf)
 res_d120 <- topTable(fit2, coef = "d120_ALS", number = Inf)
 
 # Save DE results
-saveRDS(fit2, "projects/Anderson-Suthar_collab/data/Als_org_Jimena/fit2(hSpS_Ctrx_batch).rds")
-saveRDS(v, "projects/Anderson-Suthar_collab/data/Als_org_Jimena/voom(hSpS_Ctrx_batch).rds")
-saveRDS(res_d30, "projects/Anderson-Suthar_collab/data/r_objects/res_d30_ALS_vs_Ctrl(Batch).rds")
-saveRDS(res_d50, "projects/Anderson-Suthar_collab/data/r_objects/res_d50_ALS_vs_Ctrl(Batch).rds")
-saveRDS(res_d75, "projects/Anderson-Suthar_collab/data/r_objects/res_d75_ALS_vs_Ctrl(Batch).rds")
-saveRDS(res_d120, "projects/Anderson-Suthar_collab/data/r_objects/res_d120_ALS_vs_Ctrl(Batch).rds")
+save_checkpoint(fit2, "fit2_hSpS_Ctrx_batch",
+                notes = "Limma fit object with duplicateCorrelation for patient blocking, testing ALS vs control at each stage in hSPS organoids with Ctrx (coefs: d30_ALS, d50_ALS, d75_ALS, d120_ALS)",
+                dir = "projects/Anderson-Suthar_collab/data/r_objects", lines = c(322:359))
 
+save_checkpoint(v, "voom_hSpS_Ctrx_batch",
+                notes = "Voom object for hSPS organoids with Ctrx coating, subset to samples passing QC",
+                dir = "projects/Anderson-Suthar_collab/data/r_objects", lines = c(322:339))
+
+save_checkpoint(res_d30, "res_d30_ALS_vs_Ctrl",
+                notes = "DE results for ALS vs control at d30 in hSPS organoids with Ctrx coating, from limma fit with duplicateCorrelation for patient blocking",
+                dir = "projects/Anderson-Suthar_collab/data/r_objects", lines = c(322:365))
+save_checkpoint(res_d50, "res_d50_ALS_vs_Ctrl",
+                notes = "DE results for ALS vs control at d50 in hSPS organoids with Ctrx coating, from limma fit with duplicateCorrelation for patient blocking",
+                dir = "projects/Anderson-Suthar_collab/data/r_objects", lines = c(322:365))
+save_checkpoint(res_d75, "res_d75_ALS_vs_Ctrl",
+                notes = "DE results for ALS vs control at d75 in hSPS organoids with Ctrx coating, from limma fit with duplicateCorrelation for patient blocking",
+                dir = "projects/Anderson-Suthar_collab/data/r_objects", lines = c(322:365))
+save_checkpoint(res_d120, "res_d120_ALS_vs_Ctrl",
+                notes = "DE results for ALS vs control at d120 in hSPS organoids with Ctrx coating, from limma fit with duplicateCorrelation for patient blocking",
+                dir = "projects/Anderson-Suthar_collab/data/r_objects", lines = c(322:365))
+
+# ---- Reload checkpoints (optional) ----
+# fit2     <- load_checkpoint("fit2_hSpS_Ctrx_batch",  dir = "projects/Anderson-Suthar_collab/data/r_objects")
+# v        <- load_checkpoint("voom_hSpS_Ctrx_batch",  dir = "projects/Anderson-Suthar_collab/data/r_objects")
+res_d30  <- load_checkpoint("res_d30_ALS_vs_Ctrl",   dir = "projects/Anderson-Suthar_collab/data/r_objects")
+res_d50  <- load_checkpoint("res_d50_ALS_vs_Ctrl",   dir = "projects/Anderson-Suthar_collab/data/r_objects")
+res_d75  <- load_checkpoint("res_d75_ALS_vs_Ctrl",   dir = "projects/Anderson-Suthar_collab/data/r_objects")
+res_d120 <- load_checkpoint("res_d120_ALS_vs_Ctrl",  dir = "projects/Anderson-Suthar_collab/data/r_objects")
 
 # ---- GSEA ----
 library(fgsea)
@@ -381,6 +457,11 @@ library(msigdbr)
 gmt_path <- "genesets/h.all.v2025.1.Hs.symbols.gmt"
 pathways <- gmtPathways(gmt_path)
 
+# Add specific curated pathway(s) from MSigDB via msigdbr
+# WP2447: ALS (Amyotrophic Lateral Sclerosis) - WikiPathways, C2 curated collection
+wp2447_df <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:WIKIPATHWAYS") |>
+  dplyr::filter(gs_exact_source == "WP2447")
+pathways <- c(pathways, split(wp2447_df$gene_symbol, wp2447_df$gs_name))
 
 # Helper to build ranked list and run fgsea
 run_gsea <- function(tt, pathways, nPermSimple = 10000) {
@@ -405,10 +486,18 @@ gsea_d50  <- run_gsea(res_d50, pathways)
 gsea_d75  <- run_gsea(res_d75, pathways)
 gsea_d120 <- run_gsea(res_d120, pathways)
 
-saveRDS(gsea_d30,  "projects/Anderson-Suthar_collab/data/r_objects/fgsea_d30_ALS_vs_Ctrl(Batch).rds")
-saveRDS(gsea_d50,  "projects/Anderson-Suthar_collab/data/r_objects/fgsea_d50_ALS_vs_Ctrl(Batch).rds")
-saveRDS(gsea_d75,  "projects/Anderson-Suthar_collab/data/r_objects/fgsea_d75_ALS_vs_Ctrl(Batch).rds")
-saveRDS(gsea_d120, "projects/Anderson-Suthar_collab/data/r_objects/fgsea_d120_ALS_vs_Ctrl(Batch).rds")
+save_checkpoint(gsea_d30,  "fgsea_d30_ALS_vs_Ctrl",
+                notes = "fgsea results for ALS vs control at d30 (Hallmark + WP2447), ranked by limma t-statistic with patient blocking",
+                dir = "projects/Anderson-Suthar_collab/data/r_objects", lines = c(430:465))
+save_checkpoint(gsea_d50,  "fgsea_d50_ALS_vs_Ctrl",
+                notes = "fgsea results for ALS vs control at d50 (Hallmark + WP2447), ranked by limma t-statistic with patient blocking",
+                dir = "projects/Anderson-Suthar_collab/data/r_objects", lines = c(430:465))
+save_checkpoint(gsea_d75,  "fgsea_d75_ALS_vs_Ctrl",
+                notes = "fgsea results for ALS vs control at d75 (Hallmark + WP2447), ranked by limma t-statistic with patient blocking",
+                dir = "projects/Anderson-Suthar_collab/data/r_objects", lines = c(430:465))
+save_checkpoint(gsea_d120, "fgsea_d120_ALS_vs_Ctrl",
+                notes = "fgsea results for ALS vs control at d120 (Hallmark + WP2447), ranked by limma t-statistic with patient blocking",
+                dir = "projects/Anderson-Suthar_collab/data/r_objects", lines = c(430:465))
 # ---- GSEA networks ----
 library(clusterProfiler)
 library(enrichplot)
@@ -445,10 +534,18 @@ cp_d75  <- run_cp_gsea(res_d75, msig_t2g)
 cp_d120 <- run_cp_gsea(res_d120, msig_t2g)
 
 #Save
-saveRDS(cp_d30,  "projects/Anderson-Suthar_collab/data/r_objects/cp_gsea_d30_ALS_vs_Ctrl(Batch).rds")
-saveRDS(cp_d50,  "projects/Anderson-Suthar_collab/data/r_objects/cp_gsea_d50_ALS_vs_Ctrl(Batch).rds")
-saveRDS(cp_d75,  "projects/Anderson-Suthar_collab/data/r_objects/cp_gsea_d75_ALS_vs_Ctrl(Batch).rds")
-saveRDS(cp_d120, "projects/Anderson-Suthar_collab/data/r_objects/cp_gsea_d120_ALS_vs_Ctrl(Batch).rds")
+save_checkpoint(cp_d30,  "cp_gsea_d30_ALS_vs_Ctrl",
+                notes = "clusterProfiler GSEA results for ALS vs control at d30 (Hallmark), ranked by limma t-statistic with patient blocking",
+                dir = "projects/Anderson-Suthar_collab/data/r_objects", lines = 503:512)
+save_checkpoint(cp_d50,  "cp_gsea_d50_ALS_vs_Ctrl",
+                notes = "clusterProfiler GSEA results for ALS vs control at d50 (Hallmark), ranked by limma t-statistic with patient blocking",
+                dir = "projects/Anderson-Suthar_collab/data/r_objects", lines = 503:512)
+save_checkpoint(cp_d75,  "cp_gsea_d75_ALS_vs_Ctrl",
+                notes = "clusterProfiler GSEA results for ALS vs control at d75 (Hallmark), ranked by limma t-statistic with patient blocking",
+                dir = "projects/Anderson-Suthar_collab/data/r_objects", lines = 503:512)
+save_checkpoint(cp_d120, "cp_gsea_d120_ALS_vs_Ctrl",
+                notes = "clusterProfiler GSEA results for ALS vs control at d120 (Hallmark), ranked by limma t-statistic with patient blocking",
+                dir = "projects/Anderson-Suthar_collab/data/r_objects", lines = 503:512)
 
 # ---- graph Results ----
 library(UpSetR)
