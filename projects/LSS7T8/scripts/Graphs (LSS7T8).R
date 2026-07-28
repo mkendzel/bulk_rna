@@ -4,28 +4,25 @@ library(fgsea)
 library(ggrepel)
 library(patchwork)
 
-# import all helper functions from folder R/
+# source helper functions from R/
 invisible(lapply(list.files("R", pattern = "\\.R$", full.names = TRUE), source))
 
 ckpt_dir <- "projects/LSS7T8/data/r_objects"
 fig_dir  <- "projects/LSS7T8/figures"
 pathways <- gmtPathways("genesets/mh.all.v2026.1.Mm.symbols.gmt")
 
-# Write a ggplot to fig_dir as PDF. Dimensions are in inches.
-# cairo_pdf is required: plot labels contain non-ASCII glyphs (alpha, gamma,
-# arrows) that the default pdf device cannot embed.
+# Save a ggplot to fig_dir as PDF, dimensions in inches.
+# cairo_pdf because labels use non-ASCII glyphs (alpha, gamma, arrows).
 save_fig <- function(plot, filename, width, height) {
   ggsave(file.path(fig_dir, filename), plot,
          width = width, height = height, device = cairo_pdf)
 }
 
-# Annotated limma-voom DE results (named list, one topTable per contrast)
+# limma-voom DE results: named list, one topTable per contrast
 res_liver  <- load_checkpoint("res_voom_liver_annotated", dir = ckpt_dir)
 res_spleen <- load_checkpoint("res_voom_spleen_annotated", dir = ckpt_dir)
 
-# A ggplot layer holding a rotated, semi-transparent draft label. Add last so it
-# draws over the data.
-# Default Inf extents centre the grob on the panel for any axis type or range.
+# Draft watermark layer, centred on the panel. Add last so it draws on top.
 watermark <- function(label = "Not for publication") {
   annotation_custom(
     grid::textGrob(
@@ -36,10 +33,9 @@ watermark <- function(label = "Not for publication") {
   )
 }
 
-# Volcano of one contrast's topTable (res_df), highlighting genes in the hallmark
-# set pathway_name: grey = off-target, blue = in set, red = in set and passing the
-# adj.P.Val < 0.05 / |logFC| > 1 cutoffs drawn as dashed guides. Red genes are
-# labelled. -log10(adj.P.Val) is capped at 50 to keep near-zero p-values on scale.
+# Volcano of one topTable. Grey = not in pathway_name, blue = in it,
+# red = in it and past the dashed cutoffs (adj.P.Val < 0.05, |logFC| > 1).
+# Red genes are labelled. y capped at 50.
 make_ifn_volcano <- function(res_df, pathway_name, plot_title) {
   target_genes <- pathways[[pathway_name]]
 
@@ -73,10 +69,8 @@ make_ifn_volcano <- function(res_df, pathway_name, plot_title) {
     theme(plot.title = element_text(face = "bold", size = 12))
 }
 
-# Lollipop of hallmark pathways from an fgsea result (gsea_df), keeping those with
-# |NES| > 1.5 and pval < 0.05, ordered by NES. Point size is -log10(padj); fill and
-# the axis arrows give the direction of the contrast.
-# NES < 0 is higher in group_neg, NES > 0 is higher in group_pos.
+# Lollipop of fgsea pathways with |NES| > 1.5 and pval < 0.05, ordered by NES.
+# Point size is -log10(padj). NES < 0 is higher in group_neg, NES > 0 in group_pos.
 make_lollipop <- function(gsea_df, plot_title, group_neg, group_pos) {
   sig_paths <- gsea_df %>%
     filter(abs(NES) > 1.5, pval < 0.05) %>%
