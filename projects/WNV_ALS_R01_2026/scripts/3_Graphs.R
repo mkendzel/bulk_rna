@@ -2,6 +2,7 @@
 library(fgsea)
 library(ggvenn)
 library(ggplot2)
+library(ggrepel)
 library(dplyr)
 library(tibble)
 library(purrr)
@@ -13,6 +14,391 @@ library(openxlsx)
 # ---- Load helper functions ----
 invisible(sapply(list.files("R", full.names = TRUE), source))
 source("projects/WNV_ALS_R01_2026/scripts/0_config.R")
+
+# =============================================================================
+# Original Figures 
+# =============================================================================
+# Objects in data/fig4_r2sdhf/ come from projects/R2SDHF/data/r_objects
+#+ FIGURE 4 - R2SDHF WNV infection timecourse
+fig4_dir <- file.path(PROJ, "data", "fig4_r2sdhf")
+
+FIG4_NES_CUT  <- 1.5
+FIG4_PVAL_CUT <- 0.05
+FIG4_N_LABELS <- 25
+
+# Fonts, pt
+FIG4_AXIS_TITLE <- 18
+FIG4_AXIS_TEXT  <- 14
+FIG4_TITLE_SIZE <- 20
+
+# Panel height per pathway row, relative to panel width
+FIG4_ROW_ASPECT <- 0.085
+# Bubble size in mm; limits shared by all three panels
+FIG4_SIZE_RANGE  <- c(3, 9)
+FIG4_SIZE_LIMITS <- c(0, 50)
+FIG4_SIZE_BREAKS <- c(5, 25, 45)
+
+# Scatter gene list
+FIG4_INNATE_SETS <- c(
+  "HALLMARK_INTERFERON_ALPHA_RESPONSE",
+  "HALLMARK_INTERFERON_GAMMA_RESPONSE",
+  "HALLMARK_INFLAMMATORY_RESPONSE",
+  "HALLMARK_TNFA_SIGNALING_VIA_NFKB",
+  "HALLMARK_IL6_JAK_STAT3_SIGNALING",
+  "HALLMARK_COMPLEMENT"
+)
+
+# Bubble plot pathways
+FIG4_BUBBLE_SETS <- c(
+  FIG4_INNATE_SETS,
+  "HALLMARK_P53_PATHWAY",
+  "HALLMARK_E2F_TARGETS",
+  "HALLMARK_OXIDATIVE_PHOSPHORYLATION"
+)
+
+fig4_times <- c(TX12 = "12", TX24 = "24", TX48 = "48")
+
+fig4_gsea <- setNames(lapply(names(fig4_times), function(tp) {
+  readRDS(file.path(fig4_dir, sprintf("fgsea_%s_vs_Mock(R2SDHF).rds", tp)))
+}), names(fig4_times))
+
+fig4_res <- setNames(lapply(names(fig4_times), function(tp) {
+  readRDS(file.path(fig4_dir, sprintf("res_%s(R2SDHF).rds", tp)))
+}), names(fig4_times))
+
+# ---- Fig 4A-C: hallmark GSEA, WNV vs Mock 
+fig4_bubble <- function(gsea_res, time_label) {
+
+  d <- gsea_res |>
+    dplyr::filter(pathway %in% FIG4_BUBBLE_SETS,
+                  abs(NES) > FIG4_NES_CUT, pval < FIG4_PVAL_CUT) |>
+    dplyr::mutate(
+      pathway_clean  = str_to_title(str_replace_all(str_remove(pathway, "^HALLMARK_"), "_", " ")),
+      direction      = ifelse(NES > 0, "Enriched", "Suppressed"),
+      neg_log10_padj = -log10(padj)
+    ) |>
+    dplyr::arrange(NES)
+
+  if (nrow(d) == 0) return(NULL)
+  d$pathway_clean <- factor(d$pathway_clean, levels = d$pathway_clean)
+
+  # direction arrows sit in the space added below the first row
+  xr    <- range(d$NES)
+  y_arr <- -0.15
+  y_lab <- -0.85
+
+  ggplot(d, aes(NES, pathway_clean)) +
+    geom_segment(aes(x = 0, xend = NES, yend = pathway_clean),
+                 colour = "grey60", linewidth = 0.4) +
+    geom_point(aes(size = neg_log10_padj, fill = direction), shape = 21, stroke = 0.3) +
+    geom_vline(xintercept = 0, linetype = "dashed", colour = "grey40") +
+    annotate("segment", x = 0, xend = xr[2], y = y_arr, yend = y_arr,
+             arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
+             colour = "grey30", linewidth = 1.1) +
+    annotate("segment", x = 0, xend = xr[1], y = y_arr, yend = y_arr,
+             arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
+             colour = "grey30", linewidth = 1.1) +
+    annotate("text", x = xr[2], y = y_lab, label = "Higher in WNV",
+             hjust = 1, colour = "grey30", size = FIG4_AXIS_TEXT / .pt) +
+    annotate("text", x = xr[1], y = y_lab, label = "Higher in Mock",
+             hjust = 0, colour = "grey30", size = FIG4_AXIS_TEXT / .pt) +
+    scale_fill_manual(values = c(Enriched = "#D73027", Suppressed = "#4575B4"),
+                      guide = "none") +
+    scale_size_continuous(range  = FIG4_SIZE_RANGE,
+                          limits = FIG4_SIZE_LIMITS,
+                          breaks = FIG4_SIZE_BREAKS,
+                          name   = "-log10(p-value)") +
+    scale_y_discrete(expand = expansion(add = c(2.4, 0.6))) +
+    labs(x = "Normalized Enrichment Score (NES)", y = NULL,
+         title = sprintf("WNV vs. Mock (%s hpi)", time_label)) +
+    theme_minimal(base_size = 11) +
+    theme(panel.grid.major.y = element_blank(),
+          aspect.ratio = FIG4_ROW_ASPECT * (nrow(d) + 2),
+          plot.title   = element_text(face = "bold", size = FIG4_TITLE_SIZE),
+          axis.title   = element_text(size = FIG4_AXIS_TITLE),
+          axis.text    = element_text(size = FIG4_AXIS_TEXT),
+          legend.text  = element_text(size = FIG4_AXIS_TEXT),
+          legend.title = element_text(size = FIG4_AXIS_TEXT))
+}
+
+fig4_bubbles <- purrr::imap(fig4_gsea, function(g, tp) fig4_bubble(g, fig4_times[[tp]]))
+
+fig4_bubbles$TX12
+fig4_bubbles$TX24
+fig4_bubbles$TX48
+
+# ---- Fig 4D: innate immunity genes at 48 h 
+# Leading-edge genes of the innate sets, 48 h GSEA
+fig4_targets <- fig4_gsea$TX48 |>
+  dplyr::filter(pathway %in% FIG4_INNATE_SETS) |>
+  dplyr::pull(leadingEdge) |>
+  unlist() |>
+  unique()
+
+fig4_volc <- fig4_res$TX48 |>
+  as.data.frame() |>
+  rownames_to_column("gene") |>
+  dplyr::mutate(
+    FC        = 2^logFC,
+    log10_p   = log10(P.Value),
+    is_target = gene %in% fig4_targets,
+    direction = dplyr::case_when(
+      is_target & logFC > 0 ~ "Up",
+      is_target & logFC < 0 ~ "Down",
+      TRUE ~ NA_character_
+    )
+  )
+
+# y limit set by the least significant highlighted gene
+fig4_yfloor <- min(fig4_volc$log10_p[fig4_volc$is_target], na.rm = TRUE) * 1.2
+
+# band above the axis holding the direction arrows
+fig4_ytop <- abs(fig4_yfloor) * 0.18
+
+fig4_scatter <- ggplot(fig4_volc, aes(FC, log10_p)) +
+  geom_point(data = function(d) dplyr::filter(d, !is_target),
+             colour = "grey70", size = 0.6, alpha = 0.4) +
+  geom_point(data = function(d) dplyr::filter(d, is_target),
+             aes(colour = direction), size = 1.8, alpha = 0.9) +
+  # geom text size is mm, /.pt converts from pt
+  geom_text_repel(data = function(d) dplyr::slice_min(dplyr::filter(d, is_target),
+                                                      P.Value, n = FIG4_N_LABELS),
+                  aes(label = gene), size = FIG4_AXIS_TEXT / .pt, fontface = "italic",
+                  max.overlaps = 20, segment.size = 0.3,
+                  min.segment.length = 0, box.padding = 0.4,
+                  ylim = c(fig4_yfloor, 0)) +
+  geom_vline(xintercept = 1, linewidth = 0.5) +
+  geom_hline(yintercept = 0, linewidth = 0.5) +
+  annotate("segment", x = 1, xend = 40, y = fig4_ytop * 0.3, yend = fig4_ytop * 0.3,
+           arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
+           colour = "grey30", linewidth = 1.1) +
+  annotate("segment", x = 1, xend = 1/40, y = fig4_ytop * 0.3, yend = fig4_ytop * 0.3,
+           arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
+           colour = "grey30", linewidth = 1.1) +
+  annotate("text", x = 40, y = fig4_ytop * 0.78, label = "Higher in WNV",
+           hjust = 1, colour = "grey30", size = FIG4_AXIS_TEXT / .pt) +
+  annotate("text", x = 1/40, y = fig4_ytop * 0.78, label = "Higher in Mock",
+           hjust = 0, colour = "grey30", size = FIG4_AXIS_TEXT / .pt) +
+  scale_colour_manual(values = c(Up = "red", Down = "black"), guide = "none") +
+  scale_x_continuous(trans = "log2", breaks = 2^(-5:5),
+                     labels = c("-32", "-16", "-8", "-4", "-2", "1",
+                                "+2", "+4", "+8", "+16", "+32")) +
+  coord_cartesian(xlim = c(1/45, 45), ylim = c(fig4_yfloor, fig4_ytop)) +
+  labs(x = "FC: WNV vs. Mock", y = "log10(p-value)",
+       title = "Innate Immunity Genes (48 hpi)") +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", size = FIG4_TITLE_SIZE),
+        panel.grid.minor = element_blank(),
+        axis.title = element_text(size = FIG4_AXIS_TITLE),
+        axis.text  = element_text(size = FIG4_AXIS_TEXT))
+
+fig4_scatter
+
+# ---- Save Figure 4 -
+# "pdf" or "tiff"
+FIG_FORMAT <- "pdf"
+
+save_fig <- function(p, name, width = 7, height = 6, subdir = NULL) {
+  outdir <- if (is.null(subdir)) ensure_dir(dir_fig) else ensure_dir(dir_fig, subdir)
+  f <- file.path(outdir, paste0(name, ".", FIG_FORMAT))
+
+  if (FIG_FORMAT == "tiff") {
+    tiff(f, width = width, height = height, units = "in", res = 300, compression = "lzw")
+  } else {
+    pdf(f, width = width, height = height)
+  }
+  on.exit(dev.off(), add = TRUE)
+
+  if (inherits(p, "pheatmap")) grid.draw(p$gtable) else print(p)
+  invisible(f)
+}
+
+purrr::iwalk(fig4_bubbles, function(p, tp) {
+  save_fig(p, paste0("fig4_gsea_bubble_", tp), width = 8, height = 6, subdir = "fig4")
+})
+
+save_fig(fig4_scatter, "fig4_innate_scatter_TX48", width = 7, height = 5, subdir = "fig4")
+# ----
+
+#+ FIGURE 7 - ALS organoid ageing timecourse
+# Objects in data/fig7_als/ come from
+# projects/Anderson-Suthar_collab/data/r_objects/pre_checkpoint_objs
+fig7_dir <- file.path(PROJ, "data", "fig7_als")
+
+FIG7_NES_CUT  <- 1.5
+FIG7_PVAL_CUT <- 0.05
+FIG7_N_LABELS <- 25
+
+# Fonts, pt
+FIG7_AXIS_TITLE <- 18
+FIG7_AXIS_TEXT  <- 14
+FIG7_TITLE_SIZE <- 20
+
+# Panel height per pathway row, relative to panel width
+FIG7_ROW_ASPECT <- 0.085
+# Bubble size in mm; limits shared by all four panels
+FIG7_SIZE_RANGE  <- c(3, 9)
+FIG7_SIZE_LIMITS <- c(0, 50)
+FIG7_SIZE_BREAKS <- c(5, 25, 45)
+
+# Scatter x axis spans 1/FIG7_XMAX to FIG7_XMAX
+FIG7_XMAX <- 4
+
+# Scatter gene list
+FIG7_INNATE_SETS <- c(
+  "HALLMARK_INTERFERON_ALPHA_RESPONSE",
+  "HALLMARK_INTERFERON_GAMMA_RESPONSE",
+  "HALLMARK_INFLAMMATORY_RESPONSE",
+  "HALLMARK_TNFA_SIGNALING_VIA_NFKB",
+  "HALLMARK_IL6_JAK_STAT3_SIGNALING",
+  "HALLMARK_COMPLEMENT"
+)
+
+fig7_days <- c(d30 = "30", d50 = "50", d75 = "75", d120 = "120")
+
+fig7_gsea <- setNames(lapply(names(fig7_days), function(d) {
+  readRDS(file.path(fig7_dir, sprintf("fgsea_%s_ALS_vs_Ctrl(Batch).rds", d)))
+}), names(fig7_days))
+
+fig7_res <- readRDS(file.path(fig7_dir, "res_d120_ALS_vs_Ctrl(Batch).rds"))
+
+# ---- Fig 7A-D: hallmark GSEA, C9orf72 vs Control
+fig7_bubble <- function(gsea_res, day_label) {
+
+  d <- gsea_res |>
+    dplyr::filter(abs(NES) > FIG7_NES_CUT, pval < FIG7_PVAL_CUT) |>
+    dplyr::mutate(
+      pathway_clean  = str_to_title(str_replace_all(str_remove(pathway, "^HALLMARK_"), "_", " ")),
+      direction      = ifelse(NES > 0, "Enriched", "Suppressed"),
+      neg_log10_padj = -log10(padj)
+    ) |>
+    dplyr::arrange(NES)
+
+  if (nrow(d) == 0) return(NULL)
+  d$pathway_clean <- factor(d$pathway_clean, levels = d$pathway_clean)
+
+  # direction arrows sit in the space added below the first row
+  xr    <- range(d$NES)
+  y_arr <- -0.15
+  y_lab <- -0.85
+
+  ggplot(d, aes(NES, pathway_clean)) +
+    geom_segment(aes(x = 0, xend = NES, yend = pathway_clean),
+                 colour = "grey60", linewidth = 0.4) +
+    geom_point(aes(size = neg_log10_padj, fill = direction), shape = 21, stroke = 0.3) +
+    geom_vline(xintercept = 0, linetype = "dashed", colour = "grey40") +
+    annotate("segment", x = 0, xend = xr[2], y = y_arr, yend = y_arr,
+             arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
+             colour = "grey30", linewidth = 1.1) +
+    annotate("segment", x = 0, xend = xr[1], y = y_arr, yend = y_arr,
+             arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
+             colour = "grey30", linewidth = 1.1) +
+    annotate("text", x = xr[2], y = y_lab, label = "Higher in C9orf72",
+             hjust = 1, colour = "grey30", size = FIG7_AXIS_TEXT / .pt) +
+    annotate("text", x = xr[1], y = y_lab, label = "Higher in Control",
+             hjust = 0, colour = "grey30", size = FIG7_AXIS_TEXT / .pt) +
+    scale_fill_manual(values = c(Enriched = "#D73027", Suppressed = "#4575B4"),
+                      guide = "none") +
+    scale_size_continuous(range  = FIG7_SIZE_RANGE,
+                          limits = FIG7_SIZE_LIMITS,
+                          breaks = FIG7_SIZE_BREAKS,
+                          name   = "-log10(p-value)") +
+    scale_y_discrete(expand = expansion(add = c(2.4, 0.6))) +
+    labs(x = "Normalized Enrichment Score (NES)", y = NULL,
+         title = sprintf("C9orf72 vs. Control (Day %s)", day_label)) +
+    theme_minimal(base_size = 11) +
+    theme(panel.grid.major.y = element_blank(),
+          aspect.ratio = FIG7_ROW_ASPECT * (nrow(d) + 2),
+          plot.title   = element_text(face = "bold", size = FIG7_TITLE_SIZE),
+          axis.title   = element_text(size = FIG7_AXIS_TITLE),
+          axis.text    = element_text(size = FIG7_AXIS_TEXT),
+          legend.text  = element_text(size = FIG7_AXIS_TEXT),
+          legend.title = element_text(size = FIG7_AXIS_TEXT))
+}
+
+fig7_bubbles <- purrr::imap(fig7_gsea, function(g, d) fig7_bubble(g, fig7_days[[d]]))
+
+fig7_bubbles$d30
+fig7_bubbles$d50
+fig7_bubbles$d75
+fig7_bubbles$d120
+
+# ---- Fig 7E: innate immunity genes at day 120
+# Leading-edge genes of the innate sets, day 120 GSEA
+fig7_targets <- fig7_gsea$d120 |>
+  dplyr::filter(pathway %in% FIG7_INNATE_SETS) |>
+  dplyr::pull(leadingEdge) |>
+  unlist() |>
+  unique()
+
+fig7_volc <- fig7_res |>
+  as.data.frame() |>
+  rownames_to_column("gene") |>
+  dplyr::mutate(
+    FC        = 2^logFC,
+    log10_p   = log10(P.Value),
+    is_target = gene %in% fig7_targets,
+    direction = dplyr::case_when(
+      is_target & logFC > 0 ~ "Up",
+      is_target & logFC < 0 ~ "Down",
+      TRUE ~ NA_character_
+    )
+  )
+
+# y limit set by the least significant highlighted gene
+fig7_yfloor <- min(fig7_volc$log10_p[fig7_volc$is_target], na.rm = TRUE) * 1.2
+
+# band above the axis holding the direction arrows
+fig7_ytop <- abs(fig7_yfloor) * 0.18
+
+fig7_xarr <- FIG7_XMAX * 0.9
+
+fig7_scatter <- ggplot(fig7_volc, aes(FC, log10_p)) +
+  geom_point(data = function(d) dplyr::filter(d, !is_target),
+             colour = "grey70", size = 0.6, alpha = 0.4) +
+  geom_point(data = function(d) dplyr::filter(d, is_target),
+             aes(colour = direction), size = 1.8, alpha = 0.9) +
+  # geom text size is mm, /.pt converts from pt
+  geom_text_repel(data = function(d) dplyr::slice_min(dplyr::filter(d, is_target),
+                                                      P.Value, n = FIG7_N_LABELS),
+                  aes(label = gene), size = FIG7_AXIS_TEXT / .pt, fontface = "italic",
+                  max.overlaps = 20, segment.size = 0.3,
+                  min.segment.length = 0, box.padding = 0.4,
+                  ylim = c(fig7_yfloor, 0)) +
+  geom_vline(xintercept = 1, linewidth = 0.5) +
+  geom_hline(yintercept = 0, linewidth = 0.5) +
+  annotate("segment", x = 1, xend = fig7_xarr, y = fig7_ytop * 0.3, yend = fig7_ytop * 0.3,
+           arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
+           colour = "grey30", linewidth = 1.1) +
+  annotate("segment", x = 1, xend = 1/fig7_xarr, y = fig7_ytop * 0.3, yend = fig7_ytop * 0.3,
+           arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
+           colour = "grey30", linewidth = 1.1) +
+  annotate("text", x = fig7_xarr, y = fig7_ytop * 0.78, label = "Higher in C9orf72",
+           hjust = 1, colour = "grey30", size = FIG7_AXIS_TEXT / .pt) +
+  annotate("text", x = 1/fig7_xarr, y = fig7_ytop * 0.78, label = "Higher in Control",
+           hjust = 0, colour = "grey30", size = FIG7_AXIS_TEXT / .pt) +
+  scale_colour_manual(values = c(Up = "red", Down = "black"), guide = "none") +
+  scale_x_continuous(trans = "log2", breaks = 2^(-5:5),
+                     labels = c("-32", "-16", "-8", "-4", "-2", "1",
+                                "+2", "+4", "+8", "+16", "+32")) +
+  coord_cartesian(xlim = c(1/FIG7_XMAX, FIG7_XMAX), ylim = c(fig7_yfloor, fig7_ytop)) +
+  labs(x = "FC: C9orf72 vs. Control", y = "log10(p-value)",
+       title = "Innate Immunity Genes (Day 120)") +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", size = FIG7_TITLE_SIZE),
+        panel.grid.minor = element_blank(),
+        axis.title = element_text(size = FIG7_AXIS_TITLE),
+        axis.text  = element_text(size = FIG7_AXIS_TEXT))
+
+fig7_scatter
+
+# ---- Save Figure 7
+purrr::iwalk(fig7_bubbles, function(p, d) {
+  save_fig(p, paste0("fig7_gsea_bubble_", d), width = 8, height = 6, subdir = "fig7")
+})
+
+save_fig(fig7_scatter, "fig7_innate_scatter_d120", width = 7, height = 5, subdir = "fig7")
+# ----
 
 # ---- Data load ----
 # Human Hallmark gene sets. For mouse, use the matching *.Mm.symbols.gmt file.
@@ -126,6 +512,129 @@ for (e in EXPERIMENTS) {
            p, width = 7, height = 6, dpi = 300)
   }
 }
+
+# ---- Interaction scatter ----
+# Each interaction contrast plotted as its two component responses: the reference
+# line's stimulus response on x, C9's on y. Points on the y = x diagonal respond
+# equivalently; points off it are the C9-specific response the contrast tests.
+inter_reg <- contrast_registry |>
+  dplyr::filter(type == "interaction", experiment == "spinal")
+
+dir_cols <- c("Higher in C9" = "#D62728", "Lower in C9" = "#1F77B4", "NS" = "grey75")
+
+inter_data <- purrr::pmap_dfr(
+  list(inter_reg$name, as.character(inter_reg$stim), inter_reg$ref_line,
+       inter_reg$label, inter_reg$min_n),
+  function(nm, st, ref, lab, mn) {
+
+    int <- tt$spinal[[nm]]
+    c9  <- tt$spinal[[paste0("C9_", st, "_vs_Mock")]]
+    ctl <- tt$spinal[[paste0(ref, "_", st, "_vs_Mock")]]
+
+    tibble::tibble(
+      contrast   = nm,
+      label      = lab,
+      stim       = st,
+      ref_line   = ref,
+      min_n      = mn,
+      ensembl_id = int$ensembl_id,
+      SYMBOL     = int$SYMBOL,
+      x          = ctl$logFC[match(int$ensembl_id, ctl$ensembl_id)],
+      y          = c9$logFC[match(int$ensembl_id, c9$ensembl_id)],
+      int_lfc    = int$logFC,
+      int_padj   = int$adj.P.Val
+    ) |>
+      dplyr::filter(!is.na(x), !is.na(y)) |>
+      dplyr::mutate(
+        sig = !is.na(int_padj) & int_padj < P_CUT & abs(int_lfc) > LFC_CUT,
+        direction = dplyr::case_when(
+          sig & int_lfc > 0 ~ "Higher in C9",
+          sig & int_lfc < 0 ~ "Lower in C9",
+          TRUE              ~ "NS"
+        )
+      )
+  }
+)
+
+outdir <- ensure_dir(dir_fig, "interaction")
+
+# One labelled panel per interaction contrast
+for (nm in inter_reg$name) {
+
+  df <- dplyr::filter(inter_data, contrast == nm)
+  if (nrow(df) == 0) next
+
+  lim <- range(c(df$x, df$y), finite = TRUE)
+  r   <- stats::cor(df$x, df$y, use = "complete.obs")
+
+  lab_df <- df |>
+    dplyr::filter(sig, !is.na(SYMBOL), SYMBOL != "") |>
+    dplyr::arrange(int_padj) |>
+    head(15)
+
+  caption <- if (df$min_n[1] == 1) {
+    "Unreplicated (n = 1) - exploratory"
+  } else {
+    NULL
+  }
+
+  p <- ggplot(df, aes(x, y)) +
+    geom_hline(yintercept = 0, colour = "grey88") +
+    geom_vline(xintercept = 0, colour = "grey88") +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey35") +
+    geom_point(aes(colour = direction), size = 1.2, alpha = 0.6) +
+    ggrepel::geom_text_repel(
+      data = lab_df, aes(label = SYMBOL),
+      size = 2.8, max.overlaps = 20, min.segment.length = 0,
+      segment.colour = "grey60", segment.size = 0.3
+    ) +
+    scale_colour_manual(values = dir_cols, name = NULL) +
+    coord_fixed(xlim = lim, ylim = lim) +
+    labs(
+      title    = df$label[1],
+      subtitle = sprintf("r = %.2f   |   %d genes differ (adj.P.Val < %s, |logFC| > %s)",
+                         r, sum(df$sig), P_CUT, LFC_CUT),
+      caption  = caption,
+      x = paste0(df$ref_line[1], ": ", df$stim[1], " vs Mock (log2FC)"),
+      y = paste0("C9: ", df$stim[1], " vs Mock (log2FC)")
+    ) +
+    theme_bw() +
+    theme(panel.grid.minor = element_blank(),
+          plot.caption = element_text(colour = "#B22222", hjust = 0))
+
+  ggsave(file.path(outdir, paste0("interaction_", nm, ".png")),
+         p, width = 6.5, height = 6.5, dpi = 300)
+}
+
+# Overview grid: reference line x stimulus, no gene labels
+inter_overview <- inter_data |>
+  dplyr::mutate(
+    stim     = factor(stim, levels = STIM_LEVELS),
+    ref_line = factor(ref_line, levels = LINE_LEVELS)
+  )
+
+lim <- range(c(inter_overview$x, inter_overview$y), finite = TRUE)
+
+p_all <- ggplot(inter_overview, aes(x, y)) +
+  geom_hline(yintercept = 0, colour = "grey88") +
+  geom_vline(xintercept = 0, colour = "grey88") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey35") +
+  geom_point(aes(colour = direction), size = 0.9, alpha = 0.55) +
+  facet_grid(ref_line ~ stim) +
+  scale_colour_manual(values = dir_cols, name = NULL) +
+  coord_fixed(xlim = lim, ylim = lim) +
+  labs(
+    title = "C9 stimulus response vs control line response",
+    subtitle = "Off-diagonal genes drive the interaction contrasts",
+    x = "Control line: stimulus vs Mock (log2FC)",
+    y = "C9: stimulus vs Mock (log2FC)"
+  ) +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill = "grey92", colour = NA))
+
+ggsave(file.path(outdir, "interaction_overview.png"), p_all,
+       width = 11, height = 8, dpi = 300)
 
 # ---- Heatmap: most variable genes ----
 for (e in EXPERIMENTS) {
