@@ -27,16 +27,23 @@ FIG4_PVAL_CUT <- 0.05
 FIG4_N_LABELS <- 25
 
 # Fonts, pt
-FIG4_AXIS_TITLE <- 18
-FIG4_AXIS_TEXT  <- 14
-FIG4_TITLE_SIZE <- 20
+FIG4_AXIS_TITLE <- 20
+FIG4_AXIS_TEXT  <- 16
+FIG4_TITLE_SIZE <- 22
+# Direction arrow labels, pt
+FIG4_ARROW_TEXT <- 14
+# Gene labels on the scatter, pt
+FIG4_GENE_TEXT  <- 14
+
+# Pathway labels truncated past this many characters
+FIG4_LABEL_MAX <- 30
 
 # Panel height per pathway row, relative to panel width
 FIG4_ROW_ASPECT <- 0.085
-# Bubble size in mm; limits shared by all three panels
+# Bubble size in mm; -log10(padj) limits shared by all three panels
 FIG4_SIZE_RANGE  <- c(3, 9)
 FIG4_SIZE_LIMITS <- c(0, 50)
-FIG4_SIZE_BREAKS <- c(5, 25, 45)
+FIG4_SIZE_BREAKS <- c(1, 25, 50)
 
 # Scatter gene list
 FIG4_INNATE_SETS <- c(
@@ -66,62 +73,73 @@ fig4_res <- setNames(lapply(names(fig4_times), function(tp) {
   readRDS(file.path(fig4_dir, sprintf("res_%s(R2SDHF).rds", tp)))
 }), names(fig4_times))
 
-# ---- Fig 4A-C: hallmark GSEA, WNV vs Mock 
-fig4_bubble <- function(gsea_res, time_label) {
-
-  d <- gsea_res |>
+# ---- Fig 4A-C: hallmark GSEA, WNV vs Mock
+fig4_bubble_data <- function(gsea_res) {
+  gsea_res |>
     dplyr::filter(pathway %in% FIG4_BUBBLE_SETS,
                   abs(NES) > FIG4_NES_CUT, pval < FIG4_PVAL_CUT) |>
     dplyr::mutate(
-      pathway_clean  = str_to_title(str_replace_all(str_remove(pathway, "^HALLMARK_"), "_", " ")),
+      pathway_clean  = abbrev_pathway(pathway, FIG4_LABEL_MAX),
       direction      = ifelse(NES > 0, "Enriched", "Suppressed"),
       neg_log10_padj = -log10(padj)
     ) |>
     dplyr::arrange(NES)
+}
+
+fig4_bubble <- function(d, time_label, size_scale) {
 
   if (nrow(d) == 0) return(NULL)
   d$pathway_clean <- factor(d$pathway_clean, levels = d$pathway_clean)
 
-  # direction arrows sit in the space added below the first row
-  xr    <- range(d$NES)
-  y_arr <- -0.15
-  y_lab <- -0.85
+  # direction arrows sit in the space added below the first row; symmetric
+  # x limits keep one label per half panel
+  xm    <- max(abs(d$NES)) * 1.15
+  y_arr <- -0.2
+  y_lab <- -1.0
 
   ggplot(d, aes(NES, pathway_clean)) +
     geom_segment(aes(x = 0, xend = NES, yend = pathway_clean),
                  colour = "grey60", linewidth = 0.4) +
     geom_point(aes(size = neg_log10_padj, fill = direction), shape = 21, stroke = 0.3) +
     geom_vline(xintercept = 0, linetype = "dashed", colour = "grey40") +
-    annotate("segment", x = 0, xend = xr[2], y = y_arr, yend = y_arr,
+    annotate("segment", x = 0, xend = xm, y = y_arr, yend = y_arr,
              arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
              colour = "grey30", linewidth = 1.1) +
-    annotate("segment", x = 0, xend = xr[1], y = y_arr, yend = y_arr,
+    annotate("segment", x = 0, xend = -xm, y = y_arr, yend = y_arr,
              arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
              colour = "grey30", linewidth = 1.1) +
-    annotate("text", x = xr[2], y = y_lab, label = "Higher in WNV",
-             hjust = 1, colour = "grey30", size = FIG4_AXIS_TEXT / .pt) +
-    annotate("text", x = xr[1], y = y_lab, label = "Higher in Mock",
-             hjust = 0, colour = "grey30", size = FIG4_AXIS_TEXT / .pt) +
+    annotate("text", x = xm, y = y_lab, label = "Higher in WNV",
+             hjust = 1, colour = "black", size = FIG4_ARROW_TEXT / .pt) +
+    annotate("text", x = -xm, y = y_lab, label = "Higher in Mock",
+             hjust = 0, colour = "black", size = FIG4_ARROW_TEXT / .pt) +
     scale_fill_manual(values = c(Enriched = "#D73027", Suppressed = "#4575B4"),
                       guide = "none") +
     scale_size_continuous(range  = FIG4_SIZE_RANGE,
-                          limits = FIG4_SIZE_LIMITS,
-                          breaks = FIG4_SIZE_BREAKS,
+                          limits = size_scale$limits,
+                          breaks = size_scale$breaks,
                           name   = "-log10(p-value)") +
-    scale_y_discrete(expand = expansion(add = c(2.4, 0.6))) +
+    scale_x_continuous(limits = c(-xm, xm), expand = expansion(mult = 0.03)) +
+    scale_y_discrete(expand = expansion(add = c(3.0, 0.6))) +
     labs(x = "Normalized Enrichment Score (NES)", y = NULL,
          title = sprintf("WNV vs. Mock (%s hpi)", time_label)) +
     theme_minimal(base_size = 11) +
     theme(panel.grid.major.y = element_blank(),
-          aspect.ratio = FIG4_ROW_ASPECT * (nrow(d) + 2),
-          plot.title   = element_text(face = "bold", size = FIG4_TITLE_SIZE),
-          axis.title   = element_text(size = FIG4_AXIS_TITLE),
-          axis.text    = element_text(size = FIG4_AXIS_TEXT),
-          legend.text  = element_text(size = FIG4_AXIS_TEXT),
-          legend.title = element_text(size = FIG4_AXIS_TEXT))
+          aspect.ratio = FIG4_ROW_ASPECT * (nrow(d) + 3),
+          text         = element_text(colour = "black"),
+          plot.title   = element_text(face = "bold", size = FIG4_TITLE_SIZE, colour = "black"),
+          axis.title   = element_text(size = FIG4_AXIS_TITLE, colour = "black"),
+          axis.text    = element_text(size = FIG4_AXIS_TEXT, colour = "black"),
+          legend.text  = element_text(size = FIG4_AXIS_TEXT, colour = "black"),
+          legend.title = element_text(size = FIG4_AXIS_TEXT, colour = "black"))
 }
 
-fig4_bubbles <- purrr::imap(fig4_gsea, function(g, tp) fig4_bubble(g, fig4_times[[tp]]))
+fig4_bubble_dfs <- lapply(fig4_gsea, fig4_bubble_data)
+
+fig4_size <- list(limits = FIG4_SIZE_LIMITS, breaks = FIG4_SIZE_BREAKS)
+
+fig4_bubbles <- purrr::imap(fig4_bubble_dfs, function(d, tp) {
+  fig4_bubble(d, fig4_times[[tp]], fig4_size)
+})
 
 fig4_bubbles$TX12
 fig4_bubbles$TX24
@@ -163,7 +181,7 @@ fig4_scatter <- ggplot(fig4_volc, aes(FC, log10_p)) +
   # geom text size is mm, /.pt converts from pt
   geom_text_repel(data = function(d) dplyr::slice_min(dplyr::filter(d, is_target),
                                                       P.Value, n = FIG4_N_LABELS),
-                  aes(label = gene), size = FIG4_AXIS_TEXT / .pt, fontface = "italic",
+                  aes(label = gene), size = FIG4_GENE_TEXT / .pt, fontface = "italic",
                   max.overlaps = 20, segment.size = 0.3,
                   min.segment.length = 0, box.padding = 0.4,
                   ylim = c(fig4_yfloor, 0)) +
@@ -176,9 +194,9 @@ fig4_scatter <- ggplot(fig4_volc, aes(FC, log10_p)) +
            arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
            colour = "grey30", linewidth = 1.1) +
   annotate("text", x = 40, y = fig4_ytop * 0.78, label = "Higher in WNV",
-           hjust = 1, colour = "grey30", size = FIG4_AXIS_TEXT / .pt) +
+           hjust = 1, colour = "black", size = FIG4_ARROW_TEXT / .pt) +
   annotate("text", x = 1/40, y = fig4_ytop * 0.78, label = "Higher in Mock",
-           hjust = 0, colour = "grey30", size = FIG4_AXIS_TEXT / .pt) +
+           hjust = 0, colour = "black", size = FIG4_ARROW_TEXT / .pt) +
   scale_colour_manual(values = c(Up = "red", Down = "black"), guide = "none") +
   scale_x_continuous(trans = "log2", breaks = 2^(-5:5),
                      labels = c("-32", "-16", "-8", "-4", "-2", "1",
@@ -187,32 +205,15 @@ fig4_scatter <- ggplot(fig4_volc, aes(FC, log10_p)) +
   labs(x = "FC: WNV vs. Mock", y = "log10(p-value)",
        title = "Innate Immunity Genes (48 hpi)") +
   theme_minimal(base_size = 11) +
-  theme(plot.title = element_text(face = "bold", size = FIG4_TITLE_SIZE),
-        panel.grid.minor = element_blank(),
-        axis.title = element_text(size = FIG4_AXIS_TITLE),
-        axis.text  = element_text(size = FIG4_AXIS_TEXT))
+  theme(panel.grid.minor = element_blank(),
+        text       = element_text(colour = "black"),
+        plot.title = element_text(face = "bold", size = FIG4_TITLE_SIZE, colour = "black"),
+        axis.title = element_text(size = FIG4_AXIS_TITLE, colour = "black"),
+        axis.text  = element_text(size = FIG4_AXIS_TEXT, colour = "black"))
 
 fig4_scatter
 
 # ---- Save Figure 4 -
-# "pdf" or "tiff"
-FIG_FORMAT <- "pdf"
-
-save_fig <- function(p, name, width = 7, height = 6, subdir = NULL) {
-  outdir <- if (is.null(subdir)) ensure_dir(dir_fig) else ensure_dir(dir_fig, subdir)
-  f <- file.path(outdir, paste0(name, ".", FIG_FORMAT))
-
-  if (FIG_FORMAT == "tiff") {
-    tiff(f, width = width, height = height, units = "in", res = 300, compression = "lzw")
-  } else {
-    pdf(f, width = width, height = height)
-  }
-  on.exit(dev.off(), add = TRUE)
-
-  if (inherits(p, "pheatmap")) grid.draw(p$gtable) else print(p)
-  invisible(f)
-}
-
 purrr::iwalk(fig4_bubbles, function(p, tp) {
   save_fig(p, paste0("fig4_gsea_bubble_", tp), width = 8, height = 6, subdir = "fig4")
 })
@@ -230,16 +231,22 @@ FIG7_PVAL_CUT <- 0.05
 FIG7_N_LABELS <- 25
 
 # Fonts, pt
-FIG7_AXIS_TITLE <- 18
-FIG7_AXIS_TEXT  <- 14
-FIG7_TITLE_SIZE <- 20
+FIG7_AXIS_TITLE <- 20
+FIG7_AXIS_TEXT  <- 16
+FIG7_TITLE_SIZE <- 22
+# Direction arrow labels, pt
+FIG7_ARROW_TEXT <- 14
+# Gene labels on the scatter, pt
+FIG7_GENE_TEXT  <- 14
+
+# Pathway labels truncated past this many characters
+FIG7_LABEL_MAX <- 30
 
 # Panel height per pathway row, relative to panel width
 FIG7_ROW_ASPECT <- 0.085
-# Bubble size in mm; limits shared by all four panels
+# Bubble size in mm; -log10(padj) limits pooled across the four panels
 FIG7_SIZE_RANGE  <- c(3, 9)
-FIG7_SIZE_LIMITS <- c(0, 50)
-FIG7_SIZE_BREAKS <- c(5, 25, 45)
+FIG7_SIZE_BREAKS_N <- 3
 
 # Scatter x axis spans 1/FIG7_XMAX to FIG7_XMAX
 FIG7_XMAX <- 4
@@ -263,60 +270,74 @@ fig7_gsea <- setNames(lapply(names(fig7_days), function(d) {
 fig7_res <- readRDS(file.path(fig7_dir, "res_d120_ALS_vs_Ctrl(Batch).rds"))
 
 # ---- Fig 7A-D: hallmark GSEA, C9orf72 vs Control
-fig7_bubble <- function(gsea_res, day_label) {
-
-  d <- gsea_res |>
+fig7_bubble_data <- function(gsea_res) {
+  gsea_res |>
     dplyr::filter(abs(NES) > FIG7_NES_CUT, pval < FIG7_PVAL_CUT) |>
     dplyr::mutate(
-      pathway_clean  = str_to_title(str_replace_all(str_remove(pathway, "^HALLMARK_"), "_", " ")),
+      pathway_clean  = abbrev_pathway(pathway, FIG7_LABEL_MAX),
       direction      = ifelse(NES > 0, "Enriched", "Suppressed"),
       neg_log10_padj = -log10(padj)
     ) |>
     dplyr::arrange(NES)
+}
+
+fig7_bubble <- function(d, day_label, size_scale) {
 
   if (nrow(d) == 0) return(NULL)
   d$pathway_clean <- factor(d$pathway_clean, levels = d$pathway_clean)
 
-  # direction arrows sit in the space added below the first row
-  xr    <- range(d$NES)
-  y_arr <- -0.15
-  y_lab <- -0.85
+  # direction arrows sit in the space added below the first row; symmetric
+  # x limits keep one label per half panel
+  xm    <- max(abs(d$NES)) * 1.15
+  y_arr <- -0.2
+  y_lab <- -1.0
 
   ggplot(d, aes(NES, pathway_clean)) +
     geom_segment(aes(x = 0, xend = NES, yend = pathway_clean),
                  colour = "grey60", linewidth = 0.4) +
     geom_point(aes(size = neg_log10_padj, fill = direction), shape = 21, stroke = 0.3) +
     geom_vline(xintercept = 0, linetype = "dashed", colour = "grey40") +
-    annotate("segment", x = 0, xend = xr[2], y = y_arr, yend = y_arr,
+    annotate("segment", x = 0, xend = xm, y = y_arr, yend = y_arr,
              arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
              colour = "grey30", linewidth = 1.1) +
-    annotate("segment", x = 0, xend = xr[1], y = y_arr, yend = y_arr,
+    annotate("segment", x = 0, xend = -xm, y = y_arr, yend = y_arr,
              arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
              colour = "grey30", linewidth = 1.1) +
-    annotate("text", x = xr[2], y = y_lab, label = "Higher in C9orf72",
-             hjust = 1, colour = "grey30", size = FIG7_AXIS_TEXT / .pt) +
-    annotate("text", x = xr[1], y = y_lab, label = "Higher in Control",
-             hjust = 0, colour = "grey30", size = FIG7_AXIS_TEXT / .pt) +
+    annotate("text", x = xm, y = y_lab, label = "Higher in C9orf72",
+             hjust = 1, colour = "black", size = FIG7_ARROW_TEXT / .pt) +
+    annotate("text", x = -xm, y = y_lab, label = "Higher in Control",
+             hjust = 0, colour = "black", size = FIG7_ARROW_TEXT / .pt) +
     scale_fill_manual(values = c(Enriched = "#D73027", Suppressed = "#4575B4"),
                       guide = "none") +
     scale_size_continuous(range  = FIG7_SIZE_RANGE,
-                          limits = FIG7_SIZE_LIMITS,
-                          breaks = FIG7_SIZE_BREAKS,
+                          limits = size_scale$limits,
+                          breaks = size_scale$breaks,
                           name   = "-log10(p-value)") +
-    scale_y_discrete(expand = expansion(add = c(2.4, 0.6))) +
+    scale_x_continuous(limits = c(-xm, xm), expand = expansion(mult = 0.03)) +
+    scale_y_discrete(expand = expansion(add = c(3.0, 0.6))) +
     labs(x = "Normalized Enrichment Score (NES)", y = NULL,
          title = sprintf("C9orf72 vs. Control (Day %s)", day_label)) +
     theme_minimal(base_size = 11) +
     theme(panel.grid.major.y = element_blank(),
-          aspect.ratio = FIG7_ROW_ASPECT * (nrow(d) + 2),
-          plot.title   = element_text(face = "bold", size = FIG7_TITLE_SIZE),
-          axis.title   = element_text(size = FIG7_AXIS_TITLE),
-          axis.text    = element_text(size = FIG7_AXIS_TEXT),
-          legend.text  = element_text(size = FIG7_AXIS_TEXT),
-          legend.title = element_text(size = FIG7_AXIS_TEXT))
+          aspect.ratio = FIG7_ROW_ASPECT * (nrow(d) + 3),
+          text         = element_text(colour = "black"),
+          plot.title   = element_text(face = "bold", size = FIG7_TITLE_SIZE, colour = "black"),
+          axis.title   = element_text(size = FIG7_AXIS_TITLE, colour = "black"),
+          axis.text    = element_text(size = FIG7_AXIS_TEXT, colour = "black"),
+          legend.text  = element_text(size = FIG7_AXIS_TEXT, colour = "black"),
+          legend.title = element_text(size = FIG7_AXIS_TEXT, colour = "black"))
 }
 
-fig7_bubbles <- purrr::imap(fig7_gsea, function(g, d) fig7_bubble(g, fig7_days[[d]]))
+fig7_bubble_dfs <- lapply(fig7_gsea, fig7_bubble_data)
+
+fig7_size <- bubble_size_scale(
+  unlist(lapply(fig7_bubble_dfs, `[[`, "neg_log10_padj")),
+  n = FIG7_SIZE_BREAKS_N
+)
+
+fig7_bubbles <- purrr::imap(fig7_bubble_dfs, function(d, day) {
+  fig7_bubble(d, fig7_days[[day]], fig7_size)
+})
 
 fig7_bubbles$d30
 fig7_bubbles$d50
@@ -361,7 +382,7 @@ fig7_scatter <- ggplot(fig7_volc, aes(FC, log10_p)) +
   # geom text size is mm, /.pt converts from pt
   geom_text_repel(data = function(d) dplyr::slice_min(dplyr::filter(d, is_target),
                                                       P.Value, n = FIG7_N_LABELS),
-                  aes(label = gene), size = FIG7_AXIS_TEXT / .pt, fontface = "italic",
+                  aes(label = gene), size = FIG7_GENE_TEXT / .pt, fontface = "italic",
                   max.overlaps = 20, segment.size = 0.3,
                   min.segment.length = 0, box.padding = 0.4,
                   ylim = c(fig7_yfloor, 0)) +
@@ -374,9 +395,9 @@ fig7_scatter <- ggplot(fig7_volc, aes(FC, log10_p)) +
            arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
            colour = "grey30", linewidth = 1.1) +
   annotate("text", x = fig7_xarr, y = fig7_ytop * 0.78, label = "Higher in C9orf72",
-           hjust = 1, colour = "grey30", size = FIG7_AXIS_TEXT / .pt) +
+           hjust = 1, colour = "black", size = FIG7_ARROW_TEXT / .pt) +
   annotate("text", x = 1/fig7_xarr, y = fig7_ytop * 0.78, label = "Higher in Control",
-           hjust = 0, colour = "grey30", size = FIG7_AXIS_TEXT / .pt) +
+           hjust = 0, colour = "black", size = FIG7_ARROW_TEXT / .pt) +
   scale_colour_manual(values = c(Up = "red", Down = "black"), guide = "none") +
   scale_x_continuous(trans = "log2", breaks = 2^(-5:5),
                      labels = c("-32", "-16", "-8", "-4", "-2", "1",
@@ -385,10 +406,11 @@ fig7_scatter <- ggplot(fig7_volc, aes(FC, log10_p)) +
   labs(x = "FC: C9orf72 vs. Control", y = "log10(p-value)",
        title = "Innate Immunity Genes (Day 120)") +
   theme_minimal(base_size = 11) +
-  theme(plot.title = element_text(face = "bold", size = FIG7_TITLE_SIZE),
-        panel.grid.minor = element_blank(),
-        axis.title = element_text(size = FIG7_AXIS_TITLE),
-        axis.text  = element_text(size = FIG7_AXIS_TEXT))
+  theme(panel.grid.minor = element_blank(),
+        text       = element_text(colour = "black"),
+        plot.title = element_text(face = "bold", size = FIG7_TITLE_SIZE, colour = "black"),
+        axis.title = element_text(size = FIG7_AXIS_TITLE, colour = "black"),
+        axis.text  = element_text(size = FIG7_AXIS_TEXT, colour = "black"))
 
 fig7_scatter
 
