@@ -11,7 +11,7 @@ library(ggplot2)
 
 # ---- Load helper functions + project config ----
 invisible(sapply(list.files("R", full.names = TRUE), source))
-source("projects/WNV_ALS_R01_2026/scripts/0_config.R")
+source("analysis/WNV_ALS_R01_2026/scripts/0_config.R")
 
 # ----- Import data ----
 # Plasmidsaurus matrix: gene_id / gene_name / gene_biotype, then a <sample>_cpm and

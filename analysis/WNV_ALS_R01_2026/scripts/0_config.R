@@ -6,7 +6,7 @@ library(tibble)
 library(tidyr)
 
 # ---- Paths ----
-PROJ    <- "projects/WNV_ALS_R01_2026"
+PROJ    <- "analysis/WNV_ALS_R01_2026"
 dir_raw <- file.path(PROJ, "data", "raw")
 dir_rds <- file.path(PROJ, "data", "r_objects")
 dir_fig <- file.path(PROJ, "figures")

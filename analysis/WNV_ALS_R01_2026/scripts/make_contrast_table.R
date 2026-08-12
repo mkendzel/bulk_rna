@@ -7,7 +7,7 @@ library(grid)
 library(gridExtra)
 library(dplyr)
 
-source("projects/WNV_ALS_R01_2026/scripts/0_config.R")
+source("analysis/WNV_ALS_R01_2026/scripts/0_config.R")
 
 out_pdf <- file.path(PROJ, "notes", "WNV_ALS_R01_2026_contrasts.pdf")
 ensure_dir(PROJ, "notes")

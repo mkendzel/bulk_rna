@@ -10,7 +10,7 @@ library(ggplot2)
 
 # ---- Load helper functions ----
 invisible(sapply(list.files("R", full.names = TRUE), source))
-source("projects/WNV_ALS_R01_2026/scripts/0_config.R")
+source("analysis/WNV_ALS_R01_2026/scripts/0_config.R")
 
 # ---- Dataset ----
 # Human Hallmark gene sets. For mouse, use the matching *.Mm.symbols.gmt file.

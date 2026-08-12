@@ -13,12 +13,12 @@ library(openxlsx)
 
 # ---- Load helper functions ----
 invisible(sapply(list.files("R", full.names = TRUE), source))
-source("projects/WNV_ALS_R01_2026/scripts/0_config.R")
+source("analysis/WNV_ALS_R01_2026/scripts/0_config.R")
 
 # =============================================================================
 # Original Figures 
 # =============================================================================
-# Objects in data/fig4_r2sdhf/ come from projects/R2SDHF/data/r_objects
+# Objects in data/fig4_r2sdhf/ come from analysis/R2SDHF/data/r_objects
 #+ FIGURE 4 - R2SDHF WNV infection timecourse
 fig4_dir <- file.path(PROJ, "data", "fig4_r2sdhf")
 
@@ -223,7 +223,7 @@ save_fig(fig4_scatter, "fig4_innate_scatter_TX48", width = 7, height = 5, subdir
 
 #+ FIGURE 7 - ALS organoid ageing timecourse
 # Objects in data/fig7_als/ come from
-# projects/Anderson-Suthar_collab/data/r_objects/pre_checkpoint_objs
+# analysis/Anderson-Suthar_collab/data/r_objects/pre_checkpoint_objs
 fig7_dir <- file.path(PROJ, "data", "fig7_als")
 
 FIG7_NES_CUT  <- 1.5
