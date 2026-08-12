@@ -9,19 +9,34 @@ figures
 .obsidian
 omnipathr-log
 
-# Ignore all project folders except the template (and the projects README)
-projects/*
-!projects/_template/
-!projects/_template/**
-!projects/README.md
+# Ignore all analysis folders except the template (and the analysis README)
+analysis/*
+!analysis/_template/
+!analysis/_template/**
+!analysis/README.md
 
-# Include scripts for all projects (un-ignore directories, re-ignore contents, then allow scripts)
-!projects/*/
-projects/*/*
-!projects/*/scripts/
-!projects/*/scripts/**
+# Include scripts for all analyses (un-ignore directories, re-ignore contents, then allow scripts)
+!analysis/*/
+analysis/*/*
+!analysis/*/scripts/
+!analysis/*/scripts/**
 
 # shared gene sets / gene-ID maps (large reference files, not tracked)
 genesets/*
+
+# raw sequencing / alignment data — never track anywhere, whatever the folder is called
+*.fastq
+*.fq
+*.fastq.gz
+*.fq.gz
+*.bam
+*.bai
+*.sam
+*.gtf
+*.zip
+*.rds
+*.tab
+*.summary
+*.out
 
 .positai

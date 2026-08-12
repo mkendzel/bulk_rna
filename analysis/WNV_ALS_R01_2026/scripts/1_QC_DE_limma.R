@@ -35,12 +35,28 @@ counts$gene_id <- NULL
 colnames(counts) <- sub("_count$", "", colnames(counts))
 
 # ---- Rename plasmid codes to real sample names ----
-# Match on the exact plasmid code, else on the trailing index (1-40), which
-# survives a change in the vendor's column spelling.
+# The vendor ships columns as FCMSVB_<idx>. Match on its own idx -> code map first,
+# then the exact plasmid code, then the trailing index. The vendor map is checked
+# against sample_map before it is trusted, so a renumbered run errors instead of
+# silently permuting sample labels.
+vk <- vendor_key()
+
+rename_by_vendor <- character(0)
+if (!is.null(vk)) {
+  chk <- dplyr::inner_join(vk, sample_map[, c("idx", "plasmid", "sample")],
+                           by = "idx", suffix = c("_vendor", "_map"))
+  stopifnot(
+    nrow(chk) == nrow(sample_map),
+    identical(chk$plasmid_vendor, chk$plasmid_map)
+  )
+  rename_by_vendor <- setNames(chk$sample, paste0("FCMSVB_", chk$idx))
+}
+
 rename_by_plasmid <- setNames(sample_map$sample, sample_map$plasmid)
 rename_by_idx     <- setNames(sample_map$sample, as.character(sample_map$idx))
 
 new_names <- vapply(colnames(counts), function(cn) {
+  if (cn %in% names(rename_by_vendor))  return(rename_by_vendor[[cn]])
   if (cn %in% names(rename_by_plasmid)) return(rename_by_plasmid[[cn]])
   idx <- sub("^.*_", "", cn)
   if (grepl("^[0-9]+$", idx) && idx %in% names(rename_by_idx)) return(rename_by_idx[[idx]])
@@ -90,18 +106,42 @@ qc_summary <- qc_summary |>
     by = "sample"
   )
 
+# Vendor alignment stats, joined on plasmid code. Shows a small library before
+# filterByExpr and voom hide it behind normalisation.
+if (file.exists(results_zip)) {
+  map_stats <- utils::read.csv(
+    unz(results_zip, "FCMSVB-mapping-stats-reads.csv"),
+    check.names = FALSE
+  ) |>
+    dplyr::rename(plasmid = 1, uniquely_mapped = "Uniquely Mapped") |>
+    dplyr::left_join(dplyr::select(sample_map, plasmid, sample), by = "plasmid") |>
+    dplyr::select(sample, uniquely_mapped)
+
+  qc_summary <- dplyr::left_join(qc_summary, map_stats, by = "sample")
+
+  low_lib <- qc_summary$sample[qc_summary$uniquely_mapped < 5e6]
+  if (length(low_lib) > 0) {
+    message("Samples under 5M uniquely-mapped reads: ", paste(low_lib, collapse = ", "))
+  }
+}
+
 qc_summary
 
 # Library size and gene detection per sample
 ensure_dir(dir_fig, "qc")
 
+qc_metrics <- intersect(c("total_reads", "detected_genes", "uniquely_mapped"),
+                        colnames(qc_summary))
+qc_labels  <- c(total_reads     = "Total counts",
+                detected_genes  = "Detected genes",
+                uniquely_mapped = "Uniquely mapped reads")[qc_metrics]
+
 qc_long <- qc_summary |>
-  tidyr::pivot_longer(c(total_reads, detected_genes),
+  tidyr::pivot_longer(dplyr::all_of(qc_metrics),
                       names_to = "metric", values_to = "value") |>
   dplyr::mutate(
     sample = factor(sample, levels = sample_map$sample),
-    metric = factor(metric, c("total_reads", "detected_genes"),
-                    c("Total counts", "Detected genes"))
+    metric = factor(metric, qc_metrics, qc_labels)
   )
 
 qc_plot <- ggplot(qc_long, aes(x = sample, y = value, fill = line)) +
@@ -116,8 +156,18 @@ qc_plot <- ggplot(qc_long, aes(x = sample, y = value, fill = line)) +
     panel.grid.major.x = element_blank()
   )
 
+# 5M-read guide, drawn only on the uniquely-mapped row
+if ("uniquely_mapped" %in% qc_metrics) {
+  qc_plot <- qc_plot +
+    geom_hline(
+      data = data.frame(metric = factor("Uniquely mapped reads", levels = qc_labels),
+                        y = 5e6),
+      aes(yintercept = y), linetype = "dashed", colour = "grey30"
+    )
+}
+
 ggsave(file.path(dir_fig, "qc", "library_size_and_detection.png"),
-       qc_plot, width = 12, height = 6, dpi = 300)
+       qc_plot, width = 12, height = 3 * length(qc_metrics), dpi = 300)
 
 # EDIT: drop low-count samples listed in qc_summary above
 drop_samples <- character(0)

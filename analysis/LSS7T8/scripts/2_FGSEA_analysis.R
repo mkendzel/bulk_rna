@@ -76,3 +76,52 @@ save_checkpoint(fgsea_dopc_vs_cl_spleen,   "fgsea_dopc_vs_cl_spleen", dir = "pro
                 notes = "FgSEA results for dopc vs cl in spleen using voom limma results")
 
 # =================================================
+# ---- KEGG Toll-like receptor signaling: dopc vs cl ----
+# =================================================
+# The MSigDB KEGG TLR set ships as human symbols; these data are mouse.
+# Title-case the human symbols to the mouse convention (Akt1, Myd88, ...).
+
+library(KEGGREST)
+library(org.Mm.eg.db)
+library(AnnotationDbi)
+
+# Fetch KEGG gene entries linked to the mouse TLR pathway (values like "mmu:21898")
+tlr_kegg_ids <- keggLink("mmu", "path:mmu04620")
+tlr_entrez   <- sub("^mmu:", "", unname(tlr_kegg_ids))
+
+# Map Entrez IDs to mouse gene symbols
+tlr_symbols <- mapIds(
+  org.Mm.eg.db,
+  keys    = unique(tlr_entrez),
+  column  = "SYMBOL",
+  keytype = "ENTREZID"
+)
+tlr_symbols <- unique(na.omit(unname(tlr_symbols)))
+
+# Assemble a named list matching fgsea::gmtPathways() output
+kegg_tlr <- list(KEGG_TOLL_LIKE_RECEPTOR_SIGNALING_PATHWAY = tlr_symbols)
+
+fgsea_tlr_dopc_vs_cl_liver  <- run_gsea(res_dopc_vs_cl_liver,  kegg_tlr)
+fgsea_tlr_dopc_vs_cl_spleen <- run_gsea(res_dopc_vs_cl_spleen, kegg_tlr)
+
+save_checkpoint(fgsea_tlr_dopc_vs_cl_liver, "fgsea_tlr_dopc_vs_cl_liver",
+                dir = "projects/LSS7T8/data/r_objects",
+                notes = "FgSEA of KEGG_TOLL_LIKE_RECEPTOR_SIGNALING_PATHWAY (mouse symbols) for dopc vs cl in liver, voom limma results")
+
+save_checkpoint(fgsea_tlr_dopc_vs_cl_spleen, "fgsea_tlr_dopc_vs_cl_spleen",
+                dir = "projects/LSS7T8/data/r_objects",
+                notes = "FgSEA of KEGG_TOLL_LIKE_RECEPTOR_SIGNALING_PATHWAY (mouse symbols) for dopc vs cl in spleen, voom limma results")
+
+# ---- Print KEGG TLR results ----
+print_tlr <- function(fg, tt, tissue) {
+  cat("\n==== KEGG TLR signaling | dopc vs cl |", tissue, "====\n")
+  cat("Set genes:", length(kegg_tlr[[1]]),
+      "| detected in results:", sum(unique(tt$SYMBOL) %in% kegg_tlr[[1]]), "\n")
+  print(as.data.frame(fg[, c("pathway", "pval", "padj", "NES", "size")]))
+  cat("Direction:", ifelse(fg$NES[1] > 0, "up in dopc", "up in cl"), "\n")
+  cat("Leading edge (", length(fg$leadingEdge[[1]]), "):\n  ",
+      paste(fg$leadingEdge[[1]], collapse = ", "), "\n", sep = "")
+}
+
+print_tlr(fgsea_tlr_dopc_vs_cl_liver,  res_dopc_vs_cl_liver,  "liver")
+print_tlr(fgsea_tlr_dopc_vs_cl_spleen, res_dopc_vs_cl_spleen, "spleen")

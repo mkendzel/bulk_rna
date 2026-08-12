@@ -10,6 +10,7 @@ library(grid)
 library(openxlsx)
 library(fgsea)
 library(ggrepel)
+library(limma)
 # ==== Load helper functions ====
 invisible(sapply(list.files("R", full.names = TRUE), source))
 # ==== Data load ====
@@ -619,17 +620,33 @@ colData_spleen <- load_checkpoint("colData_spleen",
 
 # ======================================
 # ==== Spleen Graphs ====
-# ---- Volcano plot: Mavs-/- vs WT at D7 (WT = reference) ----
+# ---- Volcano plot: Mavs-/- vs WT at D0 (naive; WT = reference) ----
+# The saved results only include a WT-vs-MAVSKO contrast at D7, so compute the
+# equivalent naive (D0) contrast from the saved voom object.
 #+
-# Per-gene DE table for the WT vs MAVSKO contrast (NOT the fgsea object, which is
-# pathway-level). Contrast in script 1 is WT_D7 - MAVSKO_D7, so a positive logFC
-# means higher in WT. We negate logFC so the x-axis reads as fold change OVER WT
-# (WT = reference): positive = up in Mavs-/-, negative = up in WT.
-volcano_df <- res_voom_spleen_d0_d7_annotated$WT_vs_MAVSKO_D7
+# rebuild the group factor with the reference ordering used when v was fit
+colData_spleen$group <- factor(colData_spleen$group,
+  levels = c("WT_D0", "MAVSKO_D0", "WT_D7", "MAVSKO_D7")
+)
+stopifnot(identical(colnames(v), colData_spleen$sample))
+
+design <- model.matrix(~ 0 + group, data = colData_spleen)
+colnames(design) <- levels(colData_spleen$group)
+
+contr_d0 <- makeContrasts(WT_vs_MAVSKO_D0 = WT_D0 - MAVSKO_D0, levels = design)
+fit_d0 <- eBayes(contrasts.fit(lmFit(v, design), contr_d0))
+res_d0 <- topTable(fit_d0, coef = "WT_vs_MAVSKO_D0", number = Inf, sort.by = "none")
+res_d0$ensembl_id <- sub("\\..*$", "", rownames(res_d0))
+
+# borrow the ensembl_id -> SYMBOL map already built for this gene universe
+sym_map <- res_voom_spleen_d0_d7_annotated$WT_vs_MAVSKO_D7[, c("ensembl_id", "SYMBOL")]
+volcano_df <- merge(res_d0, sym_map, by = "ensembl_id")
 volcano_df <- volcano_df[!is.na(volcano_df$SYMBOL) & volcano_df$SYMBOL != "", ]
 
+# contrast is WT - MAVSKO, so flip the sign to make positive = up in Mavs-/-
 volcano_df$logFC_vs_WT <- -volcano_df$logFC
-volcano_df$neglog10P <- -log10(volcano_df$P.Value)
+# use FDR on the y-axis to match the FDR-based significance categories below
+volcano_df$neglog10FDR <- -log10(volcano_df$adj.P.Val)
 
 # significance thresholds
 fc_cut <- 1.5        # |log2 fold change| cutoff
@@ -651,12 +668,21 @@ volcano_colors <- c(
   "Up in Mavs-/-" = "firebrick"
 )
 
+# report how many genes pass the significance thresholds (FDR < fdr_cut & |logFC| > fc_cut)
+sig_counts <- table(volcano_df$category)
+message(sprintf(
+  "Significant genes (FDR < %g, |log2FC| > %g): %d total (%d Up in WT, %d Up in Mavs-/-)",
+  fdr_cut, fc_cut,
+  sig_counts["Up in WT"] + sig_counts["Up in Mavs-/-"],
+  sig_counts["Up in WT"], sig_counts["Up in Mavs-/-"]
+))
+
 # label the top genes by significance in each direction
 n_label <- 15
 sig_df <- volcano_df[volcano_df$category != "Not Significant", ]
 label_df <- head(sig_df[order(sig_df$adj.P.Val), ], n_label)
 
-p <- ggplot(volcano_df, aes(x = logFC_vs_WT, y = neglog10P)) +
+p <- ggplot(volcano_df, aes(x = logFC_vs_WT, y = neglog10FDR)) +
   geom_vline(xintercept = c(-fc_cut, fc_cut), linetype = "dashed", color = "grey40", linewidth = 0.4) +
   geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "grey40", linewidth = 0.4) +
   geom_point(aes(fill = category), shape = 21, color = "black", size = 2, stroke = 0.15, alpha = 0.85) +
@@ -670,8 +696,8 @@ p <- ggplot(volcano_df, aes(x = logFC_vs_WT, y = neglog10P)) +
   scale_fill_manual(values = volcano_colors, name = NULL) +
   labs(
     x = "Fold Change over WT (log2)",
-    y = expression(-log[10]~"P-value"),
-    title = "Spleen: WT vs Mavs-/- at D7"
+    y = expression(-log[10]~"FDR"),
+    title = "Spleen: WT vs Mavs-/- at D0 (naive)"
   ) +
   theme_classic(base_size = 14) +
   theme(
@@ -682,7 +708,7 @@ p <- ggplot(volcano_df, aes(x = logFC_vs_WT, y = neglog10P)) +
 
 p
 ggsave(
-  filename = "projects/mavs_mito/figures/raw/spleen_WT_vs_MAVSKO_volcano_nolegend.pdf",
+  filename = "projects/mavs_mito/figures/raw/spleen_WT_vs_MAVSKO_D0_volcano_nolegend.pdf",
   plot     = p,
   width    = 5, height = 5, units = "in",
   dpi      = 300,

@@ -12,7 +12,8 @@ dir_rds <- file.path(PROJ, "data", "r_objects")
 dir_fig <- file.path(PROJ, "figures")
 dir_res <- file.path(PROJ, "results")
 
-expr_path <- file.path(dir_raw, "WNV_ALS_R01_2026-expression-matrix.tsv")
+expr_path   <- file.path(dir_raw, "FCMSVB-expression-matrix.tsv")
+results_zip <- file.path(dir_raw, "FCMSVB_results.zip")
 
 # Create a directory and return its path
 ensure_dir <- function(...) {
@@ -88,6 +89,22 @@ stopifnot(
   !any(duplicated(sample_map$sample)),
   identical(sort(sample_map$idx), 1:40)
 )
+
+# Vendor column index -> plasmid code, read from the per-sample filenames inside the
+# results zip (FCMSVB_mapping-stats/FCMSVB_<idx>_<plasmid>.tsv). Nothing is extracted.
+# Returns NULL when the zip is absent, so the config still sources with only the TSV.
+vendor_key <- function(zip = results_zip) {
+  if (!file.exists(zip)) return(NULL)
+  nm <- utils::unzip(zip, list = TRUE)$Name
+  m  <- regmatches(nm, regexec("mapping-stats/FCMSVB_(\\d+)_(.+)\\.tsv$", nm))
+  m  <- m[lengths(m) == 3L]
+  if (length(m) == 0L) return(NULL)
+  tibble::tibble(
+    idx     = as.integer(vapply(m, `[`, character(1), 2L)),
+    plasmid = vapply(m, `[`, character(1), 3L)
+  ) |>
+    dplyr::arrange(idx)
+}
 
 # ---- Factor levels ----
 LINE_LEVELS <- c("C9", "Ctrl3", "Ctrl2", "Cort")
