@@ -1,3 +1,6 @@
+# limma-voom differential expression. Reads the checkpoints 1_df_count.R wrote.
+# Run from the repo root.
+
 # ---- Libraries ----
 # Bioconductor first so dplyr masks S4Vectors::rename/select, not the reverse
 library(org.Hs.eg.db)
@@ -13,168 +16,19 @@ library(ggplot2)
 invisible(sapply(list.files("R", full.names = TRUE), source))
 source("analysis/WNV_ALS_R01_2026/scripts/0_config.R")
 
-# ----- Import data ----
-# Plasmidsaurus matrix: gene_id / gene_name / gene_biotype, then a <sample>_cpm and
-# <sample>_count column per sample. Counts are fractional and get rounded below.
-expr <- read.delim(
-  expr_path,
-  check.names      = FALSE,
-  stringsAsFactors = FALSE
-)
+# ---- Load from 1_df_count.R ----
+# load_checkpoint() takes the highest version; it should match the
+# "Counts checkpoint" row of results/qc_report.md.
+counts       <- load_checkpoint("annotated_counts", dir = dir_rds)
+vendor_genes <- load_checkpoint("vendor_genes", dir = dir_rds)
 
-# Kept for symbol fallback during annotation
-vendor_genes <- expr[, intersect(c("gene_id", "gene_name", "gene_biotype"), colnames(expr))]
-
-# ---- set up data frame ----
-count_cols <- grep("_count$", colnames(expr), value = TRUE)
-
-counts <- expr[, c("gene_id", count_cols)]
-rownames(counts) <- counts$gene_id
-counts$gene_id <- NULL
-
-colnames(counts) <- sub("_count$", "", colnames(counts))
-
-# ---- Rename plasmid codes to real sample names ----
-# The vendor ships columns as FCMSVB_<idx>. Match on its own idx -> code map first,
-# then the exact plasmid code, then the trailing index. The vendor map is checked
-# against sample_map before it is trusted, so a renumbered run errors instead of
-# silently permuting sample labels.
-vk <- vendor_key()
-
-rename_by_vendor <- character(0)
-if (!is.null(vk)) {
-  chk <- dplyr::inner_join(vk, sample_map[, c("idx", "plasmid", "sample")],
-                           by = "idx", suffix = c("_vendor", "_map"))
-  stopifnot(
-    nrow(chk) == nrow(sample_map),
-    identical(chk$plasmid_vendor, chk$plasmid_map)
-  )
-  rename_by_vendor <- setNames(chk$sample, paste0("FCMSVB_", chk$idx))
-}
-
-rename_by_plasmid <- setNames(sample_map$sample, sample_map$plasmid)
-rename_by_idx     <- setNames(sample_map$sample, as.character(sample_map$idx))
-
-new_names <- vapply(colnames(counts), function(cn) {
-  if (cn %in% names(rename_by_vendor))  return(rename_by_vendor[[cn]])
-  if (cn %in% names(rename_by_plasmid)) return(rename_by_plasmid[[cn]])
-  idx <- sub("^.*_", "", cn)
-  if (grepl("^[0-9]+$", idx) && idx %in% names(rename_by_idx)) return(rename_by_idx[[idx]])
-  NA_character_
-}, character(1), USE.NAMES = FALSE)
-
-# List failures before stopping, so the fix is obvious
-if (anyNA(new_names)) {
-  message("Unmapped count columns:\n  ",
-          paste(colnames(counts)[is.na(new_names)], collapse = "\n  "))
-}
-colnames(counts) <- new_names
-
-stopifnot(
-  !anyNA(colnames(counts)),
-  !any(duplicated(colnames(counts))),
-  length(setdiff(sample_map$sample, colnames(counts))) == 0
-)
-
-counts <- counts[, sample_map$sample, drop = FALSE]
-
-# ---- QC For samples ----
-qc_list <- lapply(colnames(counts), function(s) {
-  x <- counts[, s, drop = TRUE]
-
-  list(
-    qc = data.frame(
-      sample           = s,
-      total_reads      = sum(x),
-      detected_genes   = sum(x > 0),
-      percent_of_total = sum(x) / sum(colSums(counts)) * 100
-    ),
-    gene_summary = summary(x)
-  )
-})
-names(qc_list) <- colnames(counts)
-
-qc_summary <- do.call(rbind, lapply(qc_list, `[[`, "qc"))
-rownames(qc_summary) <- NULL
-
-gene_summaries <- do.call(cbind, lapply(qc_list, function(z) z$gene_summary))
-colnames(gene_summaries) <- names(qc_list)
-
-qc_summary <- qc_summary |>
-  dplyr::left_join(
-    dplyr::select(sample_map, sample, line, stim, experiment),
-    by = "sample"
-  )
-
-# Vendor alignment stats, joined on plasmid code. Shows a small library before
-# filterByExpr and voom hide it behind normalisation.
-if (file.exists(results_zip)) {
-  map_stats <- utils::read.csv(
-    unz(results_zip, "FCMSVB-mapping-stats-reads.csv"),
-    check.names = FALSE
-  ) |>
-    dplyr::rename(plasmid = 1, uniquely_mapped = "Uniquely Mapped") |>
-    dplyr::left_join(dplyr::select(sample_map, plasmid, sample), by = "plasmid") |>
-    dplyr::select(sample, uniquely_mapped)
-
-  qc_summary <- dplyr::left_join(qc_summary, map_stats, by = "sample")
-
-  low_lib <- qc_summary$sample[qc_summary$uniquely_mapped < 5e6]
-  if (length(low_lib) > 0) {
-    message("Samples under 5M uniquely-mapped reads: ", paste(low_lib, collapse = ", "))
-  }
-}
-
-qc_summary
-
-# Library size and gene detection per sample
-ensure_dir(dir_fig, "qc")
-
-qc_metrics <- intersect(c("total_reads", "detected_genes", "uniquely_mapped"),
-                        colnames(qc_summary))
-qc_labels  <- c(total_reads     = "Total counts",
-                detected_genes  = "Detected genes",
-                uniquely_mapped = "Uniquely mapped reads")[qc_metrics]
-
-qc_long <- qc_summary |>
-  tidyr::pivot_longer(dplyr::all_of(qc_metrics),
-                      names_to = "metric", values_to = "value") |>
-  dplyr::mutate(
-    sample = factor(sample, levels = sample_map$sample),
-    metric = factor(metric, qc_metrics, qc_labels)
-  )
-
-qc_plot <- ggplot(qc_long, aes(x = sample, y = value, fill = line)) +
-  geom_col() +
-  facet_grid(metric ~ experiment, scales = "free", space = "free_x") +
-  scale_fill_manual(values = line_cols) +
-  scale_y_continuous(labels = scales::comma) +
-  labs(x = NULL, y = NULL) +
-  theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, colour = "black"),
-    panel.grid.major.x = element_blank()
-  )
-
-# 5M-read guide, drawn only on the uniquely-mapped row
-if ("uniquely_mapped" %in% qc_metrics) {
-  qc_plot <- qc_plot +
-    geom_hline(
-      data = data.frame(metric = factor("Uniquely mapped reads", levels = qc_labels),
-                        y = 5e6),
-      aes(yintercept = y), linetype = "dashed", colour = "grey30"
-    )
-}
-
-ggsave(file.path(dir_fig, "qc", "library_size_and_detection.png"),
-       qc_plot, width = 12, height = 3 * length(qc_metrics), dpi = 300)
-
-# EDIT: drop low-count samples listed in qc_summary above
+# ---- Sample filtering ----
+# EDIT: drop samples flagged in results/qc_report.md
 drop_samples <- character(0)
 counts <- counts[, setdiff(colnames(counts), drop_samples), drop = FALSE]
 
-# Recompute replication from the samples that survived, since scripts 2-3 read
-# min_n to flag unreplicated contrasts
+# Recompute replication from the surviving samples; scripts 4-5 read min_n to
+# flag unreplicated contrasts
 cond_n_kept <- sample_map |>
   dplyr::filter(sample %in% colnames(counts)) |>
   dplyr::count(condition, .drop = FALSE, name = "n") |>
@@ -189,21 +43,25 @@ contrast_registry$min_n <- vapply(
   integer(1)
 )
 
+unreplicated <- names(cond_n_kept)[cond_n_kept < 2]
 if (length(drop_samples) > 0) {
-  message("Dropped ", length(drop_samples), " sample(s). Groups now below 2 replicates: ",
-          paste(names(cond_n_kept)[cond_n_kept < 2], collapse = ", "))
+  message("Dropped ", length(drop_samples), " sample(s).")
+}
+if (length(unreplicated) > 0) {
+  message("Groups below 2 replicates: ", paste(unreplicated, collapse = ", "))
 }
 
-# Save/load checkpoint
 save_checkpoint(counts, "counts_filtered", dir = dir_rds)
 # counts <- load_checkpoint("counts_filtered", dir = dir_rds)
 
 save_checkpoint(contrast_registry, "contrast_registry", dir = dir_rds)
 
 # ---- limma-voom fit, one experiment at a time ----
-# Experiments are fit separately, so library sizes and dispersion are never shared
-# between the spinal and cortical batches. The cell-means design (~ 0 + condition)
-# makeContrasts express the interaction terms.
+# Separate fits keep library sizes and dispersion unshared between the spinal and
+# cortical batches. Cell-means design (~ 0 + condition); makeContrasts builds the
+# interaction terms.
+ensure_dir(dir_fig, "qc")   # voom mean-variance plots
+
 fit_experiment <- function(exp_name, counts, registry) {
 
   sm <- sample_map |>
@@ -296,8 +154,8 @@ gene_map <- suppressMessages(AnnotationDbi::select(
     entrez_id  = ENTREZID
   )
 
-# Fall back to the vendor gene name where org.Hs.eg.db has no symbol, so fewer
-# genes are unrankable in script 2's GSEA
+# Fall back to the vendor gene name where org.Hs.eg.db has no symbol; unmapped
+# genes are unrankable in script 4's GSEA
 if ("gene_name" %in% colnames(vendor_genes)) {
   vendor_sym <- vendor_genes |>
     dplyr::transmute(

@@ -1,5 +1,5 @@
-# Shared config for WNV_ALS_R01_2026. Sourced by scripts 1-3.
-# Run with the repo root as the working directory.
+# Shared config for WNV_ALS_R01_2026. Sourced by scripts 1-5b.
+# Run from the repo root.
 
 library(dplyr)
 library(tibble)
@@ -90,9 +90,9 @@ stopifnot(
   identical(sort(sample_map$idx), 1:40)
 )
 
-# Vendor column index -> plasmid code, read from the per-sample filenames inside the
+# Vendor column index -> plasmid code, parsed from the per-sample filenames in the
 # results zip (FCMSVB_mapping-stats/FCMSVB_<idx>_<plasmid>.tsv). Nothing is extracted.
-# Returns NULL when the zip is absent, so the config still sources with only the TSV.
+# Returns NULL when the zip is absent.
 vendor_key <- function(zip = results_zip) {
   if (!file.exists(zip)) return(NULL)
   nm <- utils::unzip(zip, list = TRUE)$Name
@@ -114,7 +114,7 @@ EXPERIMENTS <- c("spinal", "cort")
 sample_map$line <- factor(sample_map$line, levels = LINE_LEVELS)
 sample_map$stim <- factor(sample_map$stim, levels = STIM_LEVELS)
 
-# Ordered line-then-stim so design matrix columns are predictable
+# Ordered line then stim; fixes design matrix column order
 cond_levels <- sample_map |>
   dplyr::distinct(line, stim, condition) |>
   dplyr::arrange(line, stim) |>
@@ -128,8 +128,8 @@ cond_n <- sample_map |>
   tibble::deframe()
 
 # ---- Contrast registry ----
-# One row per contrast. `expr` is passed to limma::makeContrasts; scripts 2-3 join
-# on `name` to recover grouping metadata and plot labels.
+# One row per contrast. `expr` goes to limma::makeContrasts; scripts 3-5 join on
+# `name` for grouping metadata and plot labels.
 
 # Each stimulus vs its own line's Mock
 .within <- dplyr::bind_rows(
@@ -243,3 +243,6 @@ cond_cols <- cond_cols[cond_levels]
 stim_shapes <- c(Mock = 21, IFNb = 22, IFNg = 23, WNV = 24)
 
 type_cols <- c(within_line = "#4C72B0", genotype = "#DD8452", interaction = "#55A868")
+
+# QC status tiles in script 2
+qc_status_cols <- c(PASS = "#EFF3EF", WARN = "#FBE0A6", FAIL = "#F2B4AC", "NA" = "#E6E6E6")

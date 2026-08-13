@@ -28,8 +28,8 @@ ensure_dir(dir_res)
 ensure_dir(dir_fig, "gsea")
 
 # ---- Hallmark GSEA ----
-# run_gsea() (R/run_gsea.R) ranks by the moderated t statistic and de-duplicates
-# symbols keeping the highest AveExpr
+# run_gsea() (R/run_gsea.R) ranks by moderated t, de-duplicating symbols on
+# highest AveExpr
 gsea_results <- purrr::map(tt, function(tts) {
   purrr::imap(tts, function(df, contrast_name) {
     message("fgsea: ", contrast_name)
@@ -136,7 +136,7 @@ gmt_ent <- gmt_sym |>
   dplyr::filter(!is.na(entrez_id)) |>
   dplyr::transmute(term = term, gene = entrez_id)
 
-# Rank on the moderated t statistic, matching the Hallmark ranking above
+# Rank on moderated t, matching the Hallmark ranking above
 ranked_list_entrez <- purrr::map(tt, function(tts) {
   purrr::map(tts, function(df) {
 

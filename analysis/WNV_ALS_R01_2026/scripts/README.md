@@ -74,15 +74,41 @@ raw reads are needed for a GEO/SRA deposition.
 The results zip is read in place with `unzip(list = TRUE)` and `unz()`; nothing is
 extracted into the repo. All of `data/raw/` is gitignored.
 
-Vendor alignment stats are joined into `qc_summary` as `uniquely_mapped` and drawn as a
-third row of `figures/qc/library_size_and_detection.png` with a dashed 5M-read guide.
-As of the 2026-08 run, `Cort_Mock_1` (1.6M) and `Ctrl3_IFNb_1` (1.7M) sit far below the
-~16M typical, with `Cort_Mock_3` (4.2M) and `Cort_IFNg_2` (7.0M) next. `drop_samples` in
-script 1 is empty; set it there after reading the plot.
+## QC
+
+[`2_QC.R`](2_QC.R) runs 14 per-sample checks and writes `results/qc_report.md` plus ten
+plots in `figures/qc/`. The report is generated on every run — tables and figures only, no
+commentary. QC filters nothing and writes no checkpoint, so it can be re-run freely while
+tuning thresholds; `drop_samples` lives in [`3_DE_limma.R`](3_DE_limma.R).
+
+Read `qc_status_grid.png` for every sample against every check at a glance, and
+`qc_metrics_by_sample.png` for the same data as bars with the cutoffs drawn in. The
+RNAseqQC figures beside them describe the run as a whole rather than naming samples.
+
+Checks come in three groups: vendor alignment stats read out of `FCMSVB_results.zip`, count
+matrix statistics (library size, complexity, gene detection, biotype composition), and
+vst-derived agreement measures (within-condition correlation, PCA centroid distance,
+replicate deviation). Plot categories follow the
+[RNAseqQC vignette](https://cran.r-project.org/web/packages/RNAseqQC/vignettes/introduction.html);
+`plot_chromosome()` is not used because the vendor matrix carries no gene coordinates.
+
+**Every cutoff lives in the `QC_THRESHOLDS` tribble at the top of `2_QC.R`**, with
+non-threshold knobs in `QC_PARAMS` beside it. All values are absolute. Nothing else in the
+script hardcodes a limit.
+
+The vst-derived cutoffs (`within_condition_cor`, `pca_centroid_dist`, `median_abs_M`) are
+calibrated against this dataset's distribution and will need retuning on a different run.
+`mapping_rate`, `dedup_rate`, `protein_coding_pct` and `rRNA_pct` are sentinels — they sit
+far from anything these samples produce and are there to catch a future failure, not to
+flag this one.
+
+As of the 2026-08 run: 506 pass, 30 warn, 20 fail. Seven samples fail at least one check —
+`Cort_Mock_1`, `Cort_Mock_2`, `Cort_Mock_3`, `Cort_IFNg_2`, `Ctrl3_IFNb_1`, `Ctrl3_IFNb_2`,
+`Ctrl2_WNV_3`. `drop_samples` is empty.
 
 ## Contrasts
 
-25 contrasts, built in `contrast_registry` ([`0_config.R`](0_config.R)). Scripts 2 and 3
+25 contrasts, built in `contrast_registry` ([`0_config.R`](0_config.R)). Scripts 4 and 5
 join against that table on `name` to recover grouping metadata and plot labels.
 
 | type | n | pattern |
@@ -104,25 +130,36 @@ registry row plus a combined fit.
 
 | | |
 |---|---|
-| [`0_config.R`](0_config.R) | Paths, cutoffs, `sample_map`, `contrast_registry`, palettes. Sourced by 1–3. |
-| [`1_QC_DE_limma.R`](1_QC_DE_limma.R) | Import → rename → QC → split by experiment → voom/lmFit/eBayes → annotate → checkpoints |
-| [`2_GSEA.R`](2_GSEA.R) | fgsea on MSigDB Hallmark + the ALS WikiPathways set |
-| [`3_Graphs.R`](3_Graphs.R) | PCA, volcanoes, heatmaps, per-gene bar graphs, Venn diagrams |
+| [`0_config.R`](0_config.R) | Paths, cutoffs, `sample_map`, `contrast_registry`, palettes. Sourced by 1–5. |
+| [`1_df_count.R`](1_df_count.R) | Import → rename → checkpoint. Run once per delivery. |
+| [`2_QC.R`](2_QC.R) | 14 QC checks → `results/qc_report.md` + `figures/qc/`. Writes no checkpoint. |
+| [`3_DE_limma.R`](3_DE_limma.R) | `drop_samples` → split by experiment → voom/lmFit/eBayes → annotate → checkpoints |
+| [`4_GSEA.R`](4_GSEA.R) | fgsea on MSigDB Hallmark + the ALS WikiPathways set |
+| [`5_Graphs.R`](5_Graphs.R) | PCA, volcanoes, heatmaps, per-gene bar graphs, Venn diagrams |
+| [`5b_pathway_QC.R`](5b_pathway_QC.R) | Redundancy check on the Figure 7 pathway panels |
+
+Import is separated from QC so that re-running QC while tuning thresholds does not mint a
+new counts checkpoint each time. `1_df_count.R` writes `annotated_counts` and
+`vendor_genes`; scripts 2 and 3 both load them and neither writes them back.
+`load_checkpoint()` takes the highest version, so the version it reports should match the
+"Counts checkpoint" row of `results/qc_report.md`.
 
 Significance cutoffs live only in `0_config.R` (`P_CUT`, `LFC_CUT`); do not redeclare them
-per script.
+per script. QC cutoffs live only in `QC_THRESHOLDS` in `2_QC.R`.
 
-Column contract from script 1 onward is limma's: `logFC`, `AveExpr`, `t`, `P.Value`,
+Column contract from script 3 onward is limma's: `logFC`, `AveExpr`, `t`, `P.Value`,
 `adj.P.Val`, `B`, plus `ensembl_id` / `entrez_id` / `SYMBOL`. Expression values are voom
 log2-CPM (`v$E`), not DESeq2 normalised counts.
 
 ## When the data arrives
 
 1. Drop the Plasmidsaurus matrix at `data/raw/WNV_ALS_R01_2026-expression-matrix.tsv`.
-2. Run [`1_QC_DE_limma.R`](1_QC_DE_limma.R) as far as the QC block; read `qc_summary` and
-   `figures/qc/library_size_and_detection.png`.
-3. Fill in `drop_samples <- character(0)` with any samples to exclude, then run the rest.
-4. Run scripts 2 and 3.
+2. Run [`1_df_count.R`](1_df_count.R) once.
+3. Run [`2_QC.R`](2_QC.R) and read `results/qc_report.md`. Retune `QC_THRESHOLDS` and re-run
+   as often as needed — it writes no checkpoint.
+4. Fill in `drop_samples <- character(0)` in [`3_DE_limma.R`](3_DE_limma.R) with any samples
+   to exclude, then run it.
+5. Run scripts 4 and 5.
 
 `data/r_objects/` must hold no checkpoints before the first real run — `load_checkpoint()`
 takes the highest version number, so a stale object would be picked up silently.

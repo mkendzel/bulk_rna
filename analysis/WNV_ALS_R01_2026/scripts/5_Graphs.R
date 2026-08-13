@@ -16,7 +16,7 @@ invisible(sapply(list.files("R", full.names = TRUE), source))
 source("analysis/WNV_ALS_R01_2026/scripts/0_config.R")
 
 # =============================================================================
-# Original Figures 
+# Original Figures
 # =============================================================================
 # Objects in data/fig4_r2sdhf/ come from analysis/R2SDHF/data/r_objects
 #+ FIGURE 4 - R2SDHF WNV infection timecourse
@@ -91,8 +91,8 @@ fig4_bubble <- function(d, time_label, size_scale) {
   if (nrow(d) == 0) return(NULL)
   d$pathway_clean <- factor(d$pathway_clean, levels = d$pathway_clean)
 
-  # direction arrows sit in the space added below the first row; symmetric
-  # x limits keep one label per half panel
+  # Arrows sit in the space added below the first row; symmetric x limits put
+  # one label in each half panel
   xm    <- max(abs(d$NES)) * 1.15
   y_arr <- -0.2
   y_lab <- -1.0
@@ -145,7 +145,7 @@ fig4_bubbles$TX12
 fig4_bubbles$TX24
 fig4_bubbles$TX48
 
-# ---- Fig 4D: innate immunity genes at 48 h 
+# ---- Fig 4D: innate immunity genes at 48 h
 # Leading-edge genes of the innate sets, 48 h GSEA
 fig4_targets <- fig4_gsea$TX48 |>
   dplyr::filter(pathway %in% FIG4_INNATE_SETS) |>
@@ -170,7 +170,7 @@ fig4_volc <- fig4_res$TX48 |>
 # y limit set by the least significant highlighted gene
 fig4_yfloor <- min(fig4_volc$log10_p[fig4_volc$is_target], na.rm = TRUE) * 1.2
 
-# band above the axis holding the direction arrows
+# Band above the axis holding the direction arrows
 fig4_ytop <- abs(fig4_yfloor) * 0.18
 
 fig4_scatter <- ggplot(fig4_volc, aes(FC, log10_p)) +
@@ -286,8 +286,8 @@ fig7_bubble <- function(d, day_label, size_scale) {
   if (nrow(d) == 0) return(NULL)
   d$pathway_clean <- factor(d$pathway_clean, levels = d$pathway_clean)
 
-  # direction arrows sit in the space added below the first row; symmetric
-  # x limits keep one label per half panel
+  # Arrows sit in the space added below the first row; symmetric x limits put
+  # one label in each half panel
   xm    <- max(abs(d$NES)) * 1.15
   y_arr <- -0.2
   y_lab <- -1.0
@@ -369,7 +369,7 @@ fig7_volc <- fig7_res |>
 # y limit set by the least significant highlighted gene
 fig7_yfloor <- min(fig7_volc$log10_p[fig7_volc$is_target], na.rm = TRUE) * 1.2
 
-# band above the axis holding the direction arrows
+# Band above the axis holding the direction arrows
 fig7_ytop <- abs(fig7_yfloor) * 0.18
 
 fig7_xarr <- FIG7_XMAX * 0.9
@@ -463,7 +463,7 @@ make_pca <- function(exp_name, n_top = 500) {
   pca_data <- dplyr::left_join(pca_data, centroids, by = c("condition", "line", "stim"))
 
   p <- ggplot(pca_data, aes(PC1, PC2)) +
-    # legs from each sample to its group centroid
+    # Legs from each sample to its group centroid
     geom_segment(aes(xend = cPC1, yend = cPC2, colour = condition),
                  alpha = 0.5, linewidth = 0.4, show.legend = FALSE) +
     geom_point(aes(fill = condition, shape = stim),
@@ -536,9 +536,9 @@ for (e in EXPERIMENTS) {
 }
 
 # ---- Interaction scatter ----
-# Each interaction contrast plotted as its two component responses: the reference
-# line's stimulus response on x, C9's on y. Points on the y = x diagonal respond
-# equivalently; points off it are the C9-specific response the contrast tests.
+# Each interaction contrast as its two component responses: reference line's
+# stimulus response on x, C9's on y. Off-diagonal points are the C9-specific
+# response the contrast tests.
 inter_reg <- contrast_registry |>
   dplyr::filter(type == "interaction", experiment == "spinal")
 
@@ -798,7 +798,7 @@ for (e in EXPERIMENTS) {
 }
 
 # ---- Bar graphs for a hallmark gene set ----
-# EDIT: pick a hallmark set from script 2's GSEA results
+# EDIT: pick a hallmark set from script 4's GSEA results
 hallmark_name <- "HALLMARK_INTERFERON_ALPHA_RESPONSE"
 symbols <- unique(hallmark_sets[[hallmark_name]])
 

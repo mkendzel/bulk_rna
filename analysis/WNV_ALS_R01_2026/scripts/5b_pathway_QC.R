@@ -1,7 +1,7 @@
-# QC for the Figure 7 pathway panels in 3_Graphs.R. Reads the precomputed fgsea
+# QC for the Figure 7 pathway panels in 5_Graphs.R. Reads the precomputed fgsea
 # results, measures pathway-vs-pathway redundancy within each day and classifies
 # pathway names by keyword. Flags only; nothing is dropped.
-# Run with the repo root as the working directory.
+# Run from the repo root.
 
 # ---- Library ----
 library(fgsea)
@@ -19,7 +19,7 @@ source("analysis/WNV_ALS_R01_2026/scripts/0_config.R")
 QC_OUT_DIR  <- file.path("outputs", "qc")
 QC_GMT_PATH <- "genesets/h.all.v2025.1.Hs.symbols.gmt"
 
-# Plotting cuts. Mirror FIG7_NES_CUT and FIG7_PVAL_CUT in 3_Graphs.R; keep in sync by hand.
+# Plotting cuts. Mirror FIG7_NES_CUT and FIG7_PVAL_CUT in 5_Graphs.R; keep in sync by hand.
 QC_NES_CUT  <- 1.5
 QC_PVAL_CUT <- 0.05
 
@@ -38,10 +38,10 @@ QC_TOP_LE <- 15
 
 QC_SEED <- 1
 
-# Pathway counts the current cuts produce. A mismatch means they drifted from 3_Graphs.R.
+# Pathway counts the current cuts produce. A mismatch means they drifted from 5_Graphs.R.
 QC_EXPECTED_N <- c(d30 = 11L, d50 = 17L, d75 = 14L, d120 = 14L)
 
-# No sampling or permutation is used; ordering is fixed by explicit tiebreaks.
+# No sampling or permutation; ordering is fixed by explicit tiebreaks.
 set.seed(QC_SEED)
 
 # ---- Keyword categories ----
@@ -83,7 +83,7 @@ classify_pathway <- function(pathway) {
 }
 
 # ---- Data load ----
-# Same directory, day map and file pattern as the Figure 7 block of 3_Graphs.R
+# Same directory, day map and file pattern as the Figure 7 block of 5_Graphs.R
 fig7_dir  <- file.path(PROJ, "data", "fig7_als")
 fig7_days <- c(d30 = "30", d50 = "50", d75 = "75", d120 = "120")
 
@@ -94,7 +94,7 @@ fig7_gsea <- setNames(lapply(names(fig7_days), function(d) {
 hallmark_sets <- gmtPathways(QC_GMT_PATH)
 
 # ---- Plotted pathway set ----
-# Same predicate as fig7_bubble_data(); its mutate() is cosmetic and does not change rows.
+# Same predicate as fig7_bubble_data(); its mutate() is cosmetic and adds no rows.
 qc_plotted <- function(gsea_res) {
   gsea_res |>
     dplyr::filter(abs(NES) > QC_NES_CUT, pval < QC_PVAL_CUT) |>
@@ -157,7 +157,7 @@ qc_day <- function(day) {
 
   if (!is.na(QC_EXPECTED_N[day]) && n != QC_EXPECTED_N[day]) {
     warning(day, ": ", n, " pathways, expected ", QC_EXPECTED_N[day],
-            " - cuts may have drifted from 3_Graphs.R", call. = FALSE)
+            " - cuts may have drifted from 5_Graphs.R", call. = FALSE)
   }
 
   le <- setNames(k$leadingEdge, nm)
