@@ -434,8 +434,22 @@ sample_meta <- setNames(lapply(EXPERIMENTS, function(e) load_checkpoint(paste0("
 
 contrast_registry <- load_checkpoint("contrast_registry", dir = dir_rds)
 
+# GSEA tables from 4_GSEA.R
+gsea_hallmark <- load_checkpoint("gsea_hallmark", dir = dir_rds)
+gsea_als      <- load_checkpoint("gsea_als",      dir = dir_rds)
+
 # Registry row for a contrast name
 reg_of <- function(cn) contrast_registry[match(cn, contrast_registry$name), ]
+
+# Contrast labels for one experiment, in registry order. Shared x-axis order for
+# every per-experiment figure below.
+label_levels <- function(exp_name) {
+  contrast_registry |>
+    dplyr::filter(experiment == exp_name) |>
+    dplyr::arrange(type, line, ref_line, stim) |>
+    dplyr::pull(label) |>
+    unique()
+}
 
 # ---- PCA ----
 make_pca <- function(exp_name, n_top = 500) {
@@ -946,4 +960,109 @@ for (st in venn_stims) {
 if (length(openxlsx::sheets(wb)) > 0) {
   ensure_dir(dir_res)
   openxlsx::saveWorkbook(wb, file.path(dir_res, "DE_genes_venn.xlsx"), overwrite = TRUE)
+}
+
+# ---- GSEA figures ----
+# One figure per experiment. Spinal and cort are fit separately in 3_DE_limma.R,
+# so their NES values are not on a shared scale and never share an axis.
+outdir <- ensure_dir(dir_fig, "gsea")
+
+sig_label <- paste0("padj < ", P_CUT)
+
+# Hallmark bubble: pathway x contrast, significant pathways only
+make_gsea_bubble <- function(exp_name) {
+
+  df_plot <- gsea_hallmark |>
+    dplyr::filter(experiment == exp_name,
+                  !is.na(padj), padj <= P_CUT,
+                  !is.na(NES), !is.na(pathway))
+
+  if (nrow(df_plot) == 0) {
+    message("No significant Hallmark pathways for ", exp_name)
+    return(NULL)
+  }
+
+  df_plot$pathway <- sub("^HALLMARK_", "", df_plot$pathway)
+
+  df_plot$label   <- factor(df_plot$label, levels = label_levels(exp_name))
+  df_plot$pathway <- with(df_plot, reorder(pathway, NES, mean))
+  # Unreplicated groups drawn as triangles; factor keeps the legend identical
+  # across experiments even when one has no n = 1 contrasts
+  df_plot$replication <- factor(ifelse(df_plot$min_n == 1, "n = 1", "replicated"),
+                                levels = c("replicated", "n = 1"))
+
+  ggplot(df_plot, aes(x = label, y = pathway,
+                      size = -log10(padj), fill = NES, shape = replication)) +
+    geom_point(colour = "black") +
+    facet_grid(~ type, scales = "free_x", space = "free_x") +
+    scale_size(name = "-log10(padj)", range = c(3, 9)) +
+    scale_shape_manual(values = c("n = 1" = 24, "replicated" = 21), drop = FALSE) +
+    ylab("Gene Set") +
+    labs(title = paste0("Hallmark GSEA - ", exp_name)) +
+    scale_x_discrete(position = "top") +
+    theme_bw() +
+    theme(
+      panel.grid = element_blank(),
+      axis.text.y = element_text(colour = "black"),
+      axis.text.x = element_text(colour = "black", angle = 45, hjust = 0),
+      axis.title.x = element_blank(),
+      strip.background = element_rect(fill = "grey92", colour = NA)
+    ) +
+    scale_fill_distiller(palette = "Spectral")
+}
+
+# ALS geneset NES, one bar per contrast
+make_als_bar <- function(exp_name) {
+
+  df_plot <- gsea_als |>
+    dplyr::filter(experiment == exp_name, !is.na(NES))
+
+  if (nrow(df_plot) == 0) {
+    message("No ALS geneset result for ", exp_name)
+    return(NULL)
+  }
+
+  df_plot <- df_plot |>
+    dplyr::mutate(
+      label       = factor(label, levels = label_levels(exp_name)),
+      significant = ifelse(p.adjust < P_CUT, sig_label, "ns")
+    )
+
+  ggplot(df_plot, aes(x = label, y = NES, fill = significant)) +
+    geom_col(colour = "black", width = 0.7) +
+    # Unreplicated contrasts flagged at the free end of the bar
+    geom_text(aes(label = ifelse(min_n == 1, "n = 1", ""),
+                  vjust = ifelse(NES >= 0, -0.4, 1.3)),
+              size = 2.6, colour = "#B22222") +
+    facet_grid(~ type, scales = "free_x", space = "free_x") +
+    geom_hline(yintercept = 0) +
+    scale_fill_manual(values = setNames(c("#D62728", "grey80"), c(sig_label, "ns"))) +
+    labs(x = NULL, y = "NES",
+         title = "WP: Amyotrophic lateral sclerosis",
+         subtitle = exp_name) +
+    theme_bw() +
+    theme(
+      panel.grid.major.x = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1, colour = "black"),
+      strip.background = element_rect(fill = "grey92", colour = NA)
+    )
+}
+
+for (e in EXPERIMENTS) {
+
+  # Width tracks contrast count: 23 for spinal, 2 for cort
+  n_x <- length(label_levels(e))
+  w   <- max(7, 2.2 + n_x * 0.9)
+
+  p_bubble <- make_gsea_bubble(e)
+  if (!is.null(p_bubble)) {
+    ggsave(file.path(outdir, paste0("hallmark_bubble_", e, ".png")),
+           p_bubble, width = w, height = 9, dpi = 300, limitsize = FALSE)
+  }
+
+  p_als <- make_als_bar(e)
+  if (!is.null(p_als)) {
+    ggsave(file.path(outdir, paste0("als_geneset_NES_", e, ".png")),
+           p_als, width = w, height = 5, dpi = 300, limitsize = FALSE)
+  }
 }

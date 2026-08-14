@@ -134,8 +134,8 @@ registry row plus a combined fit.
 | [`1_df_count.R`](1_df_count.R) | Import → rename → checkpoint. Run once per delivery. |
 | [`2_QC.R`](2_QC.R) | 14 QC checks → `results/qc_report.md` + `figures/qc/`. Writes no checkpoint. |
 | [`3_DE_limma.R`](3_DE_limma.R) | `drop_samples` → split by experiment → voom/lmFit/eBayes → annotate → checkpoints |
-| [`4_GSEA.R`](4_GSEA.R) | fgsea on MSigDB Hallmark + the ALS WikiPathways set |
-| [`5_Graphs.R`](5_Graphs.R) | PCA, volcanoes, heatmaps, per-gene bar graphs, Venn diagrams |
+| [`4_GSEA.R`](4_GSEA.R) | fgsea on MSigDB Hallmark + the ALS WikiPathways set → checkpoints + TSVs. Draws nothing. |
+| [`5_Graphs.R`](5_Graphs.R) | PCA, volcanoes, heatmaps, per-gene bar graphs, Venn diagrams, GSEA bubble + ALS NES |
 | [`5b_pathway_QC.R`](5b_pathway_QC.R) | Redundancy check on the Figure 7 pathway panels |
 
 Import is separated from QC so that re-running QC while tuning thresholds does not mint a
@@ -143,6 +143,13 @@ new counts checkpoint each time. `1_df_count.R` writes `annotated_counts` and
 `vendor_genes`; scripts 2 and 3 both load them and neither writes them back.
 `load_checkpoint()` takes the highest version, so the version it reports should match the
 "Counts checkpoint" row of `results/qc_report.md`.
+
+Figures belong in `5_Graphs.R` (QC figures in `2_QC.R` are the exception). Scripts 3 and 4
+compute and checkpoint only, so a plot can be retuned without re-fitting or re-permuting.
+
+Every per-experiment figure is built once per entry in `EXPERIMENTS` and saved with the
+experiment in the filename. Spinal and cort are fit separately, so their logFC and NES
+values are not on a shared scale and must not share an axis.
 
 Significance cutoffs live only in `0_config.R` (`P_CUT`, `LFC_CUT`); do not redeclare them
 per script. QC cutoffs live only in `QC_THRESHOLDS` in `2_QC.R`.
