@@ -24,7 +24,7 @@ vendor_genes <- load_checkpoint("vendor_genes", dir = dir_rds)
 
 # ---- Sample filtering ----
 # EDIT: drop samples flagged in results/qc_report.md
-drop_samples <- character(0)
+drop_samples <- c("Ctrl3_IFNb_1")
 counts <- counts[, setdiff(colnames(counts), drop_samples), drop = FALSE]
 
 # Recompute replication from the surviving samples; scripts 4-5 read min_n to
