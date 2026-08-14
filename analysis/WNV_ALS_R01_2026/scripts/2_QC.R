@@ -22,8 +22,12 @@ vendor_genes <- load_checkpoint("vendor_genes", dir = dir_rds)
 #   direction  "higher" = larger is better, "lower" = smaller is better
 #   warn/fail  absolute values in the metric's own unit
 #   unit       "count" | "pct" | "ratio", formatting only
+# input_reads and dedup_mapped_reads are the vendor's "read count" and "unique read
+# count". uniquely_mapped and dedup_unique_reads are their single-locus subsets.
 QC_THRESHOLDS <- tibble::tribble(
   ~metric,                ~label,                    ~category,     ~direction, ~warn,   ~fail,   ~unit,
+  "input_reads",          "Read count",              "alignment",   "higher",   10e6,    5e6,     "count",
+  "dedup_mapped_reads",   "Unique read count",       "alignment",   "higher",   7e6,     4.5e6,   "count",
   "uniquely_mapped",      "Uniquely mapped",         "alignment",   "higher",   10e6,    5e6,     "count",
   "dedup_unique_reads",   "Unique after dedup",      "alignment",   "higher",   6e6,     4e6,     "count",
   "mapping_rate",         "Mapping rate",            "alignment",   "higher",   95,      90,      "pct",
