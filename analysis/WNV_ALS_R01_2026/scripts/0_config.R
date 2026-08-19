@@ -1,4 +1,4 @@
-# Shared config for WNV_ALS_R01_2026. Sourced by scripts 1-5b.
+# Shared config for WNV_ALS_R01_2026. Sourced by scripts 1-7.
 # Run from the repo root.
 
 library(dplyr)
@@ -91,7 +91,7 @@ stopifnot(
 )
 
 # Vendor column index -> plasmid code, parsed from the per-sample filenames in the
-# results zip (FCMSVB_mapping-stats/FCMSVB_<idx>_<plasmid>.tsv). Nothing is extracted.
+# results zip (FCMSVB_mapping-stats/FCMSVB_<idx>_<plasmid>.tsv).
 # Returns NULL when the zip is absent.
 vendor_key <- function(zip = results_zip) {
   if (!file.exists(zip)) return(NULL)
@@ -128,7 +128,7 @@ cond_n <- sample_map |>
   tibble::deframe()
 
 # ---- Contrast registry ----
-# One row per contrast. `expr` goes to limma::makeContrasts; scripts 3-5 join on
+# One row per contrast. `expr` goes to limma::makeContrasts; scripts 3-7 join on
 # `name` for grouping metadata and plot labels.
 
 # Each stimulus vs its own line's Mock
@@ -222,6 +222,24 @@ stopifnot(
 # Contrast names for one experiment, in registry order
 contrasts_for <- function(experiment) {
   contrast_registry$name[contrast_registry$experiment == experiment]
+}
+
+# Contrast labels for one experiment, in registry order. Shared x-axis level set
+# for the figures in scripts 5-7. The `registry` default resolves lazily against
+# globalenv(), so a script that overwrites contrast_registry with the checkpoint
+# gets the min_n 3_DE_limma.R recomputed after drop_samples.
+contrast_labels <- function(experiment, registry = contrast_registry) {
+  exp_name <- experiment
+  registry |>
+    dplyr::filter(experiment == exp_name) |>
+    dplyr::arrange(type, line, ref_line, stim) |>
+    dplyr::pull(label) |>
+    unique()
+}
+
+# Registry row for a contrast name; an all-NA row for an unknown name.
+reg_of <- function(cn, registry = contrast_registry) {
+  registry[match(cn, registry$name), ]
 }
 
 # ---- Palettes ----

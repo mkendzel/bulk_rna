@@ -57,9 +57,9 @@ save_checkpoint(counts, "counts_filtered", dir = dir_rds)
 save_checkpoint(contrast_registry, "contrast_registry", dir = dir_rds)
 
 # ---- limma-voom fit, one experiment at a time ----
-# Separate fits keep library sizes and dispersion unshared between the spinal and
-# cortical batches. Cell-means design (~ 0 + condition); makeContrasts builds the
-# interaction terms.
+# Separate fits keep library sizes and dispersion unshared between the spinal
+# and cortical batches. Cell-means design (~ 0 + condition); makeContrasts
+# builds the interaction terms.
 ensure_dir(dir_fig, "qc")   # voom mean-variance plots
 
 fit_experiment <- function(exp_name, counts, registry) {
@@ -154,8 +154,7 @@ gene_map <- suppressMessages(AnnotationDbi::select(
     entrez_id  = ENTREZID
   )
 
-# Fall back to the vendor gene name where org.Hs.eg.db has no symbol; unmapped
-# genes are unrankable in script 4's GSEA
+# Fall back to the vendor gene name where org.Hs.eg.db has no symbol
 if ("gene_name" %in% colnames(vendor_genes)) {
   vendor_sym <- vendor_genes |>
     dplyr::transmute(

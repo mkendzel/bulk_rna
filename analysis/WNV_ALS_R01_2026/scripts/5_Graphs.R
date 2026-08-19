@@ -1,432 +1,29 @@
+# Overview, DE and expression figures for all 25 contrasts.
+# GSEA figures are in 6_GSEA_figures.R; pathway redundancy QC in 7_pathway_QC.R.
+# Run from the repo root.
+#
+# Figures are driven by contrast_registry. A contrast with nothing significant
+# gets an annotated empty panel rather than no file.
+
 # ---- Library ----
-library(fgsea)
-library(ggvenn)
 library(ggplot2)
 library(ggrepel)
+library(ggvenn)
 library(dplyr)
 library(tibble)
+library(tidyr)
 library(purrr)
 library(stringr)
 library(grid)
 library(pheatmap)
+library(patchwork)
 library(openxlsx)
 
 # ---- Load helper functions ----
 invisible(sapply(list.files("R", full.names = TRUE), source))
 source("analysis/WNV_ALS_R01_2026/scripts/0_config.R")
 
-# =============================================================================
-# Original Figures
-# =============================================================================
-# Objects in data/fig4_r2sdhf/ come from analysis/R2SDHF/data/r_objects
-#+ FIGURE 4 - R2SDHF WNV infection timecourse
-fig4_dir <- file.path(PROJ, "data", "fig4_r2sdhf")
-
-FIG4_NES_CUT  <- 1.5
-FIG4_PVAL_CUT <- 0.05
-FIG4_N_LABELS <- 25
-
-# Fonts, pt
-FIG4_AXIS_TITLE <- 20
-FIG4_AXIS_TEXT  <- 16
-FIG4_TITLE_SIZE <- 22
-# Direction arrow labels, pt
-FIG4_ARROW_TEXT <- 14
-# Gene labels on the scatter, pt
-FIG4_GENE_TEXT  <- 14
-
-# Pathway labels truncated past this many characters
-FIG4_LABEL_MAX <- 30
-
-# Panel height per pathway row, relative to panel width
-FIG4_ROW_ASPECT <- 0.085
-# Bubble size in mm; -log10(padj) limits shared by all three panels
-FIG4_SIZE_RANGE  <- c(3, 9)
-FIG4_SIZE_LIMITS <- c(0, 50)
-FIG4_SIZE_BREAKS <- c(1, 25, 50)
-
-# Scatter gene list
-FIG4_INNATE_SETS <- c(
-  "HALLMARK_INTERFERON_ALPHA_RESPONSE",
-  "HALLMARK_INTERFERON_GAMMA_RESPONSE",
-  "HALLMARK_INFLAMMATORY_RESPONSE",
-  "HALLMARK_TNFA_SIGNALING_VIA_NFKB",
-  "HALLMARK_IL6_JAK_STAT3_SIGNALING",
-  "HALLMARK_COMPLEMENT"
-)
-
-# Bubble plot pathways
-FIG4_BUBBLE_SETS <- c(
-  FIG4_INNATE_SETS,
-  "HALLMARK_P53_PATHWAY",
-  "HALLMARK_E2F_TARGETS",
-  "HALLMARK_OXIDATIVE_PHOSPHORYLATION"
-)
-
-fig4_times <- c(TX12 = "12", TX24 = "24", TX48 = "48")
-
-fig4_gsea <- setNames(lapply(names(fig4_times), function(tp) {
-  readRDS(file.path(fig4_dir, sprintf("fgsea_%s_vs_Mock(R2SDHF).rds", tp)))
-}), names(fig4_times))
-
-fig4_res <- setNames(lapply(names(fig4_times), function(tp) {
-  readRDS(file.path(fig4_dir, sprintf("res_%s(R2SDHF).rds", tp)))
-}), names(fig4_times))
-
-# ---- Fig 4A-C: hallmark GSEA, WNV vs Mock
-fig4_bubble_data <- function(gsea_res) {
-  gsea_res |>
-    dplyr::filter(pathway %in% FIG4_BUBBLE_SETS,
-                  abs(NES) > FIG4_NES_CUT, pval < FIG4_PVAL_CUT) |>
-    dplyr::mutate(
-      pathway_clean  = abbrev_pathway(pathway, FIG4_LABEL_MAX),
-      direction      = ifelse(NES > 0, "Enriched", "Suppressed"),
-      neg_log10_padj = -log10(padj)
-    ) |>
-    dplyr::arrange(NES)
-}
-
-fig4_bubble <- function(d, time_label, size_scale) {
-
-  if (nrow(d) == 0) return(NULL)
-  d$pathway_clean <- factor(d$pathway_clean, levels = d$pathway_clean)
-
-  # Arrows sit in the space added below the first row; symmetric x limits put
-  # one label in each half panel
-  xm    <- max(abs(d$NES)) * 1.15
-  y_arr <- -0.2
-  y_lab <- -1.0
-
-  ggplot(d, aes(NES, pathway_clean)) +
-    geom_segment(aes(x = 0, xend = NES, yend = pathway_clean),
-                 colour = "grey60", linewidth = 0.4) +
-    geom_point(aes(size = neg_log10_padj, fill = direction), shape = 21, stroke = 0.3) +
-    geom_vline(xintercept = 0, linetype = "dashed", colour = "grey40") +
-    annotate("segment", x = 0, xend = xm, y = y_arr, yend = y_arr,
-             arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
-             colour = "grey30", linewidth = 1.1) +
-    annotate("segment", x = 0, xend = -xm, y = y_arr, yend = y_arr,
-             arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
-             colour = "grey30", linewidth = 1.1) +
-    annotate("text", x = xm, y = y_lab, label = "Higher in WNV",
-             hjust = 1, colour = "black", size = FIG4_ARROW_TEXT / .pt) +
-    annotate("text", x = -xm, y = y_lab, label = "Higher in Mock",
-             hjust = 0, colour = "black", size = FIG4_ARROW_TEXT / .pt) +
-    scale_fill_manual(values = c(Enriched = "#D73027", Suppressed = "#4575B4"),
-                      guide = "none") +
-    scale_size_continuous(range  = FIG4_SIZE_RANGE,
-                          limits = size_scale$limits,
-                          breaks = size_scale$breaks,
-                          name   = "-log10(p-value)") +
-    scale_x_continuous(limits = c(-xm, xm), expand = expansion(mult = 0.03)) +
-    scale_y_discrete(expand = expansion(add = c(3.0, 0.6))) +
-    labs(x = "Normalized Enrichment Score (NES)", y = NULL,
-         title = sprintf("WNV vs. Mock (%s hpi)", time_label)) +
-    theme_minimal(base_size = 11) +
-    theme(panel.grid.major.y = element_blank(),
-          aspect.ratio = FIG4_ROW_ASPECT * (nrow(d) + 3),
-          text         = element_text(colour = "black"),
-          plot.title   = element_text(face = "bold", size = FIG4_TITLE_SIZE, colour = "black"),
-          axis.title   = element_text(size = FIG4_AXIS_TITLE, colour = "black"),
-          axis.text    = element_text(size = FIG4_AXIS_TEXT, colour = "black"),
-          legend.text  = element_text(size = FIG4_AXIS_TEXT, colour = "black"),
-          legend.title = element_text(size = FIG4_AXIS_TEXT, colour = "black"))
-}
-
-fig4_bubble_dfs <- lapply(fig4_gsea, fig4_bubble_data)
-
-fig4_size <- list(limits = FIG4_SIZE_LIMITS, breaks = FIG4_SIZE_BREAKS)
-
-fig4_bubbles <- purrr::imap(fig4_bubble_dfs, function(d, tp) {
-  fig4_bubble(d, fig4_times[[tp]], fig4_size)
-})
-
-fig4_bubbles$TX12
-fig4_bubbles$TX24
-fig4_bubbles$TX48
-
-# ---- Fig 4D: innate immunity genes at 48 h
-# Leading-edge genes of the innate sets, 48 h GSEA
-fig4_targets <- fig4_gsea$TX48 |>
-  dplyr::filter(pathway %in% FIG4_INNATE_SETS) |>
-  dplyr::pull(leadingEdge) |>
-  unlist() |>
-  unique()
-
-fig4_volc <- fig4_res$TX48 |>
-  as.data.frame() |>
-  rownames_to_column("gene") |>
-  dplyr::mutate(
-    FC        = 2^logFC,
-    log10_p   = log10(P.Value),
-    is_target = gene %in% fig4_targets,
-    direction = dplyr::case_when(
-      is_target & logFC > 0 ~ "Up",
-      is_target & logFC < 0 ~ "Down",
-      TRUE ~ NA_character_
-    )
-  )
-
-# y limit set by the least significant highlighted gene
-fig4_yfloor <- min(fig4_volc$log10_p[fig4_volc$is_target], na.rm = TRUE) * 1.2
-
-# Band above the axis holding the direction arrows
-fig4_ytop <- abs(fig4_yfloor) * 0.18
-
-fig4_scatter <- ggplot(fig4_volc, aes(FC, log10_p)) +
-  geom_point(data = function(d) dplyr::filter(d, !is_target),
-             colour = "grey70", size = 0.6, alpha = 0.4) +
-  geom_point(data = function(d) dplyr::filter(d, is_target),
-             aes(colour = direction), size = 1.8, alpha = 0.9) +
-  # geom text size is mm, /.pt converts from pt
-  geom_text_repel(data = function(d) dplyr::slice_min(dplyr::filter(d, is_target),
-                                                      P.Value, n = FIG4_N_LABELS),
-                  aes(label = gene), size = FIG4_GENE_TEXT / .pt, fontface = "italic",
-                  max.overlaps = 20, segment.size = 0.3,
-                  min.segment.length = 0, box.padding = 0.4,
-                  ylim = c(fig4_yfloor, 0)) +
-  geom_vline(xintercept = 1, linewidth = 0.5) +
-  geom_hline(yintercept = 0, linewidth = 0.5) +
-  annotate("segment", x = 1, xend = 40, y = fig4_ytop * 0.3, yend = fig4_ytop * 0.3,
-           arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
-           colour = "grey30", linewidth = 1.1) +
-  annotate("segment", x = 1, xend = 1/40, y = fig4_ytop * 0.3, yend = fig4_ytop * 0.3,
-           arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
-           colour = "grey30", linewidth = 1.1) +
-  annotate("text", x = 40, y = fig4_ytop * 0.78, label = "Higher in WNV",
-           hjust = 1, colour = "black", size = FIG4_ARROW_TEXT / .pt) +
-  annotate("text", x = 1/40, y = fig4_ytop * 0.78, label = "Higher in Mock",
-           hjust = 0, colour = "black", size = FIG4_ARROW_TEXT / .pt) +
-  scale_colour_manual(values = c(Up = "red", Down = "black"), guide = "none") +
-  scale_x_continuous(trans = "log2", breaks = 2^(-5:5),
-                     labels = c("-32", "-16", "-8", "-4", "-2", "1",
-                                "+2", "+4", "+8", "+16", "+32")) +
-  coord_cartesian(xlim = c(1/45, 45), ylim = c(fig4_yfloor, fig4_ytop)) +
-  labs(x = "FC: WNV vs. Mock", y = "log10(p-value)",
-       title = "Innate Immunity Genes (48 hpi)") +
-  theme_minimal(base_size = 11) +
-  theme(panel.grid.minor = element_blank(),
-        text       = element_text(colour = "black"),
-        plot.title = element_text(face = "bold", size = FIG4_TITLE_SIZE, colour = "black"),
-        axis.title = element_text(size = FIG4_AXIS_TITLE, colour = "black"),
-        axis.text  = element_text(size = FIG4_AXIS_TEXT, colour = "black"))
-
-fig4_scatter
-
-# ---- Save Figure 4 -
-purrr::iwalk(fig4_bubbles, function(p, tp) {
-  save_fig(p, paste0("fig4_gsea_bubble_", tp), width = 8, height = 6, subdir = "fig4")
-})
-
-save_fig(fig4_scatter, "fig4_innate_scatter_TX48", width = 7, height = 5, subdir = "fig4")
-# ----
-
-#+ FIGURE 7 - ALS organoid ageing timecourse
-# Objects in data/fig7_als/ come from
-# analysis/Anderson-Suthar_collab/data/r_objects/pre_checkpoint_objs
-fig7_dir <- file.path(PROJ, "data", "fig7_als")
-
-FIG7_NES_CUT  <- 1.5
-FIG7_PVAL_CUT <- 0.05
-FIG7_N_LABELS <- 25
-
-# Fonts, pt
-FIG7_AXIS_TITLE <- 20
-FIG7_AXIS_TEXT  <- 16
-FIG7_TITLE_SIZE <- 22
-# Direction arrow labels, pt
-FIG7_ARROW_TEXT <- 14
-# Gene labels on the scatter, pt
-FIG7_GENE_TEXT  <- 14
-
-# Pathway labels truncated past this many characters
-FIG7_LABEL_MAX <- 30
-
-# Panel height per pathway row, relative to panel width
-FIG7_ROW_ASPECT <- 0.085
-# Bubble size in mm; -log10(padj) limits pooled across the four panels
-FIG7_SIZE_RANGE  <- c(3, 9)
-FIG7_SIZE_BREAKS_N <- 3
-
-# Scatter x axis spans 1/FIG7_XMAX to FIG7_XMAX
-FIG7_XMAX <- 4
-
-# Scatter gene list
-FIG7_INNATE_SETS <- c(
-  "HALLMARK_INTERFERON_ALPHA_RESPONSE",
-  "HALLMARK_INTERFERON_GAMMA_RESPONSE",
-  "HALLMARK_INFLAMMATORY_RESPONSE",
-  "HALLMARK_TNFA_SIGNALING_VIA_NFKB",
-  "HALLMARK_IL6_JAK_STAT3_SIGNALING",
-  "HALLMARK_COMPLEMENT"
-)
-
-fig7_days <- c(d30 = "30", d50 = "50", d75 = "75", d120 = "120")
-
-fig7_gsea <- setNames(lapply(names(fig7_days), function(d) {
-  readRDS(file.path(fig7_dir, sprintf("fgsea_%s_ALS_vs_Ctrl(Batch).rds", d)))
-}), names(fig7_days))
-
-fig7_res <- readRDS(file.path(fig7_dir, "res_d120_ALS_vs_Ctrl(Batch).rds"))
-
-# ---- Fig 7A-D: hallmark GSEA, C9orf72 vs Control
-fig7_bubble_data <- function(gsea_res) {
-  gsea_res |>
-    dplyr::filter(abs(NES) > FIG7_NES_CUT, pval < FIG7_PVAL_CUT) |>
-    dplyr::mutate(
-      pathway_clean  = abbrev_pathway(pathway, FIG7_LABEL_MAX),
-      direction      = ifelse(NES > 0, "Enriched", "Suppressed"),
-      neg_log10_padj = -log10(padj)
-    ) |>
-    dplyr::arrange(NES)
-}
-
-fig7_bubble <- function(d, day_label, size_scale) {
-
-  if (nrow(d) == 0) return(NULL)
-  d$pathway_clean <- factor(d$pathway_clean, levels = d$pathway_clean)
-
-  # Arrows sit in the space added below the first row; symmetric x limits put
-  # one label in each half panel
-  xm    <- max(abs(d$NES)) * 1.15
-  y_arr <- -0.2
-  y_lab <- -1.0
-
-  ggplot(d, aes(NES, pathway_clean)) +
-    geom_segment(aes(x = 0, xend = NES, yend = pathway_clean),
-                 colour = "grey60", linewidth = 0.4) +
-    geom_point(aes(size = neg_log10_padj, fill = direction), shape = 21, stroke = 0.3) +
-    geom_vline(xintercept = 0, linetype = "dashed", colour = "grey40") +
-    annotate("segment", x = 0, xend = xm, y = y_arr, yend = y_arr,
-             arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
-             colour = "grey30", linewidth = 1.1) +
-    annotate("segment", x = 0, xend = -xm, y = y_arr, yend = y_arr,
-             arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
-             colour = "grey30", linewidth = 1.1) +
-    annotate("text", x = xm, y = y_lab, label = "Higher in C9orf72",
-             hjust = 1, colour = "black", size = FIG7_ARROW_TEXT / .pt) +
-    annotate("text", x = -xm, y = y_lab, label = "Higher in Control",
-             hjust = 0, colour = "black", size = FIG7_ARROW_TEXT / .pt) +
-    scale_fill_manual(values = c(Enriched = "#D73027", Suppressed = "#4575B4"),
-                      guide = "none") +
-    scale_size_continuous(range  = FIG7_SIZE_RANGE,
-                          limits = size_scale$limits,
-                          breaks = size_scale$breaks,
-                          name   = "-log10(p-value)") +
-    scale_x_continuous(limits = c(-xm, xm), expand = expansion(mult = 0.03)) +
-    scale_y_discrete(expand = expansion(add = c(3.0, 0.6))) +
-    labs(x = "Normalized Enrichment Score (NES)", y = NULL,
-         title = sprintf("C9orf72 vs. Control (Day %s)", day_label)) +
-    theme_minimal(base_size = 11) +
-    theme(panel.grid.major.y = element_blank(),
-          aspect.ratio = FIG7_ROW_ASPECT * (nrow(d) + 3),
-          text         = element_text(colour = "black"),
-          plot.title   = element_text(face = "bold", size = FIG7_TITLE_SIZE, colour = "black"),
-          axis.title   = element_text(size = FIG7_AXIS_TITLE, colour = "black"),
-          axis.text    = element_text(size = FIG7_AXIS_TEXT, colour = "black"),
-          legend.text  = element_text(size = FIG7_AXIS_TEXT, colour = "black"),
-          legend.title = element_text(size = FIG7_AXIS_TEXT, colour = "black"))
-}
-
-fig7_bubble_dfs <- lapply(fig7_gsea, fig7_bubble_data)
-
-fig7_size <- bubble_size_scale(
-  unlist(lapply(fig7_bubble_dfs, `[[`, "neg_log10_padj")),
-  n = FIG7_SIZE_BREAKS_N
-)
-
-fig7_bubbles <- purrr::imap(fig7_bubble_dfs, function(d, day) {
-  fig7_bubble(d, fig7_days[[day]], fig7_size)
-})
-
-fig7_bubbles$d30
-fig7_bubbles$d50
-fig7_bubbles$d75
-fig7_bubbles$d120
-
-# ---- Fig 7E: innate immunity genes at day 120
-# Leading-edge genes of the innate sets, day 120 GSEA
-fig7_targets <- fig7_gsea$d120 |>
-  dplyr::filter(pathway %in% FIG7_INNATE_SETS) |>
-  dplyr::pull(leadingEdge) |>
-  unlist() |>
-  unique()
-
-fig7_volc <- fig7_res |>
-  as.data.frame() |>
-  rownames_to_column("gene") |>
-  dplyr::mutate(
-    FC        = 2^logFC,
-    log10_p   = log10(P.Value),
-    is_target = gene %in% fig7_targets,
-    direction = dplyr::case_when(
-      is_target & logFC > 0 ~ "Up",
-      is_target & logFC < 0 ~ "Down",
-      TRUE ~ NA_character_
-    )
-  )
-
-# y limit set by the least significant highlighted gene
-fig7_yfloor <- min(fig7_volc$log10_p[fig7_volc$is_target], na.rm = TRUE) * 1.2
-
-# Band above the axis holding the direction arrows
-fig7_ytop <- abs(fig7_yfloor) * 0.18
-
-fig7_xarr <- FIG7_XMAX * 0.9
-
-fig7_scatter <- ggplot(fig7_volc, aes(FC, log10_p)) +
-  geom_point(data = function(d) dplyr::filter(d, !is_target),
-             colour = "grey70", size = 0.6, alpha = 0.4) +
-  geom_point(data = function(d) dplyr::filter(d, is_target),
-             aes(colour = direction), size = 1.8, alpha = 0.9) +
-  # geom text size is mm, /.pt converts from pt
-  geom_text_repel(data = function(d) dplyr::slice_min(dplyr::filter(d, is_target),
-                                                      P.Value, n = FIG7_N_LABELS),
-                  aes(label = gene), size = FIG7_GENE_TEXT / .pt, fontface = "italic",
-                  max.overlaps = 20, segment.size = 0.3,
-                  min.segment.length = 0, box.padding = 0.4,
-                  ylim = c(fig7_yfloor, 0)) +
-  geom_vline(xintercept = 1, linewidth = 0.5) +
-  geom_hline(yintercept = 0, linewidth = 0.5) +
-  annotate("segment", x = 1, xend = fig7_xarr, y = fig7_ytop * 0.3, yend = fig7_ytop * 0.3,
-           arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
-           colour = "grey30", linewidth = 1.1) +
-  annotate("segment", x = 1, xend = 1/fig7_xarr, y = fig7_ytop * 0.3, yend = fig7_ytop * 0.3,
-           arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
-           colour = "grey30", linewidth = 1.1) +
-  annotate("text", x = fig7_xarr, y = fig7_ytop * 0.78, label = "Higher in C9orf72",
-           hjust = 1, colour = "black", size = FIG7_ARROW_TEXT / .pt) +
-  annotate("text", x = 1/fig7_xarr, y = fig7_ytop * 0.78, label = "Higher in Control",
-           hjust = 0, colour = "black", size = FIG7_ARROW_TEXT / .pt) +
-  scale_colour_manual(values = c(Up = "red", Down = "black"), guide = "none") +
-  scale_x_continuous(trans = "log2", breaks = 2^(-5:5),
-                     labels = c("-32", "-16", "-8", "-4", "-2", "1",
-                                "+2", "+4", "+8", "+16", "+32")) +
-  coord_cartesian(xlim = c(1/FIG7_XMAX, FIG7_XMAX), ylim = c(fig7_yfloor, fig7_ytop)) +
-  labs(x = "FC: C9orf72 vs. Control", y = "log10(p-value)",
-       title = "Innate Immunity Genes (Day 120)") +
-  theme_minimal(base_size = 11) +
-  theme(panel.grid.minor = element_blank(),
-        text       = element_text(colour = "black"),
-        plot.title = element_text(face = "bold", size = FIG7_TITLE_SIZE, colour = "black"),
-        axis.title = element_text(size = FIG7_AXIS_TITLE, colour = "black"),
-        axis.text  = element_text(size = FIG7_AXIS_TEXT, colour = "black"))
-
-fig7_scatter
-
-# ---- Save Figure 7
-purrr::iwalk(fig7_bubbles, function(p, d) {
-  save_fig(p, paste0("fig7_gsea_bubble_", d), width = 8, height = 6, subdir = "fig7")
-})
-
-save_fig(fig7_scatter, "fig7_innate_scatter_d120", width = 7, height = 5, subdir = "fig7")
-# ----
-
 # ---- Data load ----
-# Human Hallmark gene sets. For mouse, use the matching *.Mm.symbols.gmt file.
-gmt_path <- "genesets/h.all.v2025.1.Hs.symbols.gmt"
-hallmark_sets <- gmtPathways(gmt_path)
-
 # logcpm is voom's E matrix (log2 counts per million)
 tt          <- setNames(lapply(EXPERIMENTS, function(e) load_checkpoint(paste0("tt_", e, "_annotated"), dir = dir_rds)), EXPERIMENTS)
 logcpm      <- setNames(lapply(EXPERIMENTS, function(e) load_checkpoint(paste0("logcpm_", e), dir = dir_rds)), EXPERIMENTS)
@@ -434,302 +31,228 @@ sample_meta <- setNames(lapply(EXPERIMENTS, function(e) load_checkpoint(paste0("
 
 contrast_registry <- load_checkpoint("contrast_registry", dir = dir_rds)
 
-# GSEA tables from 4_GSEA.R
-gsea_hallmark <- load_checkpoint("gsea_hallmark", dir = dir_rds)
-gsea_als      <- load_checkpoint("gsea_als",      dir = dir_rds)
+# ---- Coverage check ----
+# Warn when the registry lists a contrast that is absent from tt. 3_DE_limma.R
+# drops contrasts whose groups lost all samples but checkpoints the full registry.
+coverage <- purrr::map_dfr(EXPERIMENTS, function(e) {
+  expect <- contrasts_for(e)
+  tibble::tibble(
+    experiment = e,
+    n_expected = length(expect),
+    n_toptable = sum(expect %in% names(tt[[e]])),
+    missing    = paste(setdiff(expect, names(tt[[e]])), collapse = ", ")
+  )
+})
+print(coverage)
 
-# Registry row for a contrast name
-reg_of <- function(cn) contrast_registry[match(cn, contrast_registry$name), ]
-
-# Contrast labels for one experiment, in registry order. Shared x-axis order for
-# every per-experiment figure below.
-label_levels <- function(exp_name) {
-  contrast_registry |>
-    dplyr::filter(experiment == exp_name) |>
-    dplyr::arrange(type, line, ref_line, stim) |>
-    dplyr::pull(label) |>
-    unique()
+if (any(coverage$n_toptable != coverage$n_expected)) {
+  warning("Contrasts missing from tt - re-run 3_DE_limma.R:\n",
+          paste(coverage$missing[nzchar(coverage$missing)], collapse = "\n"),
+          call. = FALSE)
 }
 
+# Contrasts present in tt for one experiment, in registry order.
+contrasts_present <- function(e) intersect(contrasts_for(e), names(tt[[e]]))
+
+# All toptables of one experiment stacked, with registry metadata joined and the
+# Up/Down/NS call applied. Feeds the volcano grid, MA plots, p-value histograms
+# and the DE count barplot.
+long_tt <- function(e) {
+  purrr::map_dfr(contrasts_present(e), function(cn) {
+    dplyr::mutate(tt[[e]][[cn]], contrast = cn)
+  }) |>
+    dplyr::left_join(
+      dplyr::select(contrast_registry, name, label, type, min_n),
+      by = c("contrast" = "name")
+    ) |>
+    dplyr::mutate(
+      label     = factor(label, levels = contrast_labels(e)),
+      direction = de_direction(logFC, adj.P.Val)
+    )
+}
+
+# Facet grid geometry scales with contrast count: 23 spinal, 2 cort.
+facet_dims <- function(n, ncol = 4, w_per = 4, h_per = 3.2) {
+  ncol <- min(ncol, n)
+  list(ncol = ncol, width = max(7, ncol * w_per),
+       height = max(5, ceiling(n / ncol) * h_per))
+}
+
+# =============================================================================
+# Overview
+# =============================================================================
+dir_overview <- file.path("overview")
+
 # ---- PCA ----
-make_pca <- function(exp_name, n_top = 500) {
+# prcomp once per experiment, shared by the PC1/2, PC3/4 and scree plots.
+# Non-finite and zero-variance genes are dropped before ranking, so the top-n
+# selection cannot pick up an NA.
+pca_fit <- function(lc, n_top = 500) {
+  v    <- matrixStats::rowVars(lc)
+  names(v) <- rownames(lc)
+  v    <- v[is.finite(v) & v > 0]
+  keep <- utils::head(names(sort(v, decreasing = TRUE)), min(n_top, length(v)))
+  p    <- stats::prcomp(t(lc[keep, , drop = FALSE]), scale. = FALSE)
+  list(x = p$x, pct = round(100 * p$sdev^2 / sum(p$sdev^2), 1), n_used = length(keep))
+}
 
-  lc <- logcpm[[exp_name]]
-  sm <- sample_meta[[exp_name]]
+pca_plot <- function(fit, sm, pcs = c(1, 2), title = NULL) {
 
-  gene_vars <- apply(lc, 1, var, na.rm = TRUE)
-  top <- names(sort(gene_vars, decreasing = TRUE))[seq_len(min(n_top, length(gene_vars)))]
+  if (ncol(fit$x) < max(pcs)) {
+    return(empty_plot(title, note = paste0("Fewer than PC", max(pcs), " available")))
+  }
 
-  pca <- stats::prcomp(t(lc[top, , drop = FALSE]), scale. = FALSE)
-  percentVar <- round(100 * pca$sdev^2 / sum(pca$sdev^2))
-
-  pca_data <- tibble::tibble(
-    sample = rownames(pca$x),
-    PC1    = pca$x[, 1],
-    PC2    = pca$x[, 2]
+  d <- tibble::tibble(
+    sample = rownames(fit$x),
+    xx     = fit$x[, pcs[1]],
+    yy     = fit$x[, pcs[2]]
   ) |>
     dplyr::left_join(dplyr::select(sm, sample, line, stim, condition), by = "sample")
 
-  centroids <- pca_data |>
+  centroids <- d |>
     dplyr::group_by(condition, line, stim) |>
-    dplyr::summarise(cPC1 = mean(PC1), cPC2 = mean(PC2), .groups = "drop")
+    dplyr::summarise(cx = mean(xx), cy = mean(yy), .groups = "drop")
 
-  pca_data <- dplyr::left_join(pca_data, centroids, by = c("condition", "line", "stim"))
+  d <- dplyr::left_join(d, centroids, by = c("condition", "line", "stim"))
 
-  p <- ggplot(pca_data, aes(PC1, PC2)) +
+  ggplot(d, aes(xx, yy)) +
     # Legs from each sample to its group centroid
-    geom_segment(aes(xend = cPC1, yend = cPC2, colour = condition),
+    geom_segment(aes(xend = cx, yend = cy, colour = condition),
                  alpha = 0.5, linewidth = 0.4, show.legend = FALSE) +
     geom_point(aes(fill = condition, shape = stim),
                size = 3.2, colour = "black", stroke = 0.5) +
-    geom_point(data = centroids, aes(cPC1, cPC2, fill = condition),
+    geom_point(data = centroids, aes(cx, cy, fill = condition),
                shape = 21, size = 5, colour = "black", stroke = 1.1,
                inherit.aes = FALSE, show.legend = FALSE) +
     scale_fill_manual(values = cond_cols, drop = TRUE) +
     scale_colour_manual(values = cond_cols, drop = TRUE) +
     scale_shape_manual(values = stim_shapes, drop = TRUE) +
     guides(fill = guide_legend(override.aes = list(shape = 21))) +
-    xlab(paste0("PC1: ", percentVar[1], "% variance")) +
-    ylab(paste0("PC2: ", percentVar[2], "% variance")) +
-    labs(title = paste0("PCA - ", exp_name, " (top ", length(top), " variable genes)")) +
+    labs(x = paste0("PC", pcs[1], ": ", fit$pct[pcs[1]], "% variance"),
+         y = paste0("PC", pcs[2], ": ", fit$pct[pcs[2]], "% variance"),
+         title = title) +
     theme_classic()
-
-  ggsave(file.path(dir_fig, paste0("PCA_", exp_name, ".png")), p,
-         width = 8, height = 6, dpi = 300)
-
-  p
 }
 
-ensure_dir(dir_fig)
-pca_plots <- setNames(lapply(EXPERIMENTS, make_pca), EXPERIMENTS)
-
-# ---- Volcano Plots ----
-for (e in EXPERIMENTS) {
-
-  outdir <- ensure_dir(dir_fig, "volcano", e)
-
-  for (coef_name in names(tt[[e]])) {
-
-    volcano_df <- tt[[e]][[coef_name]] |>
-      dplyr::mutate(
-        neglog10_padj = -log10(adj.P.Val),
-        direction = dplyr::case_when(
-          adj.P.Val < P_CUT & logFC >  LFC_CUT ~ "Up",
-          adj.P.Val < P_CUT & logFC < -LFC_CUT ~ "Down",
-          TRUE ~ "NS"
-        )
-      )
-
-    n_up   <- sum(volcano_df$direction == "Up", na.rm = TRUE)
-    n_down <- sum(volcano_df$direction == "Down", na.rm = TRUE)
-
-    x_max <- max(volcano_df$logFC, na.rm = TRUE)
-    x_min <- min(volcano_df$logFC, na.rm = TRUE)
-    y_max <- max(volcano_df$neglog10_padj[is.finite(volcano_df$neglog10_padj)], na.rm = TRUE)
-
-    p <- ggplot(volcano_df, aes(x = logFC, y = neglog10_padj)) +
-      geom_point(aes(color = direction), alpha = 0.6, size = 1) +
-      geom_vline(xintercept = c(-LFC_CUT, LFC_CUT), linetype = "dashed") +
-      geom_hline(yintercept = -log10(P_CUT), linetype = "dashed") +
-      annotate("text", x = x_max, y = y_max, label = paste0("Up: ", n_up),
-               hjust = 1, vjust = 1, color = "red") +
-      annotate("text", x = x_min, y = y_max, label = paste0("Down: ", n_down),
-               hjust = 0, vjust = 1, color = "blue") +
-      scale_color_manual(values = c("Up" = "red", "Down" = "blue", "NS" = "grey70")) +
-      theme_classic() +
-      labs(
-        title    = reg_of(coef_name)$label,
-        subtitle = coef_name,
-        x        = "log2 fold change",
-        y        = "-log10 adjusted p-value"
-      )
-
-    ggsave(file.path(outdir, paste0("volcano_", coef_name, ".png")),
-           p, width = 7, height = 6, dpi = 300)
-  }
-}
-
-# ---- Interaction scatter ----
-# Each interaction contrast as its two component responses: reference line's
-# stimulus response on x, C9's on y. Off-diagonal points are the C9-specific
-# response the contrast tests.
-inter_reg <- contrast_registry |>
-  dplyr::filter(type == "interaction", experiment == "spinal")
-
-dir_cols <- c("Higher in C9" = "#D62728", "Lower in C9" = "#1F77B4", "NS" = "grey75")
-
-inter_data <- purrr::pmap_dfr(
-  list(inter_reg$name, as.character(inter_reg$stim), inter_reg$ref_line,
-       inter_reg$label, inter_reg$min_n),
-  function(nm, st, ref, lab, mn) {
-
-    int <- tt$spinal[[nm]]
-    c9  <- tt$spinal[[paste0("C9_", st, "_vs_Mock")]]
-    ctl <- tt$spinal[[paste0(ref, "_", st, "_vs_Mock")]]
-
-    tibble::tibble(
-      contrast   = nm,
-      label      = lab,
-      stim       = st,
-      ref_line   = ref,
-      min_n      = mn,
-      ensembl_id = int$ensembl_id,
-      SYMBOL     = int$SYMBOL,
-      x          = ctl$logFC[match(int$ensembl_id, ctl$ensembl_id)],
-      y          = c9$logFC[match(int$ensembl_id, c9$ensembl_id)],
-      int_lfc    = int$logFC,
-      int_padj   = int$adj.P.Val
-    ) |>
-      dplyr::filter(!is.na(x), !is.na(y)) |>
-      dplyr::mutate(
-        sig = !is.na(int_padj) & int_padj < P_CUT & abs(int_lfc) > LFC_CUT,
-        direction = dplyr::case_when(
-          sig & int_lfc > 0 ~ "Higher in C9",
-          sig & int_lfc < 0 ~ "Lower in C9",
-          TRUE              ~ "NS"
-        )
-      )
-  }
-)
-
-outdir <- ensure_dir(dir_fig, "interaction")
-
-# One labelled panel per interaction contrast
-for (nm in inter_reg$name) {
-
-  df <- dplyr::filter(inter_data, contrast == nm)
-  if (nrow(df) == 0) next
-
-  lim <- range(c(df$x, df$y), finite = TRUE)
-  r   <- stats::cor(df$x, df$y, use = "complete.obs")
-
-  lab_df <- df |>
-    dplyr::filter(sig, !is.na(SYMBOL), SYMBOL != "") |>
-    dplyr::arrange(int_padj) |>
-    head(15)
-
-  caption <- if (df$min_n[1] == 1) {
-    "Unreplicated (n = 1) - exploratory"
-  } else {
-    NULL
-  }
-
-  p <- ggplot(df, aes(x, y)) +
-    geom_hline(yintercept = 0, colour = "grey88") +
-    geom_vline(xintercept = 0, colour = "grey88") +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey35") +
-    geom_point(aes(colour = direction), size = 1.2, alpha = 0.6) +
-    ggrepel::geom_text_repel(
-      data = lab_df, aes(label = SYMBOL),
-      size = 2.8, max.overlaps = 20, min.segment.length = 0,
-      segment.colour = "grey60", segment.size = 0.3
-    ) +
-    scale_colour_manual(values = dir_cols, name = NULL) +
-    coord_fixed(xlim = lim, ylim = lim) +
-    labs(
-      title    = df$label[1],
-      subtitle = sprintf("r = %.2f   |   %d genes differ (adj.P.Val < %s, |logFC| > %s)",
-                         r, sum(df$sig), P_CUT, LFC_CUT),
-      caption  = caption,
-      x = paste0(df$ref_line[1], ": ", df$stim[1], " vs Mock (log2FC)"),
-      y = paste0("C9: ", df$stim[1], " vs Mock (log2FC)")
-    ) +
-    theme_bw() +
-    theme(panel.grid.minor = element_blank(),
-          plot.caption = element_text(colour = "#B22222", hjust = 0))
-
-  ggsave(file.path(outdir, paste0("interaction_", nm, ".png")),
-         p, width = 6.5, height = 6.5, dpi = 300)
-}
-
-# Overview grid: reference line x stimulus, no gene labels
-inter_overview <- inter_data |>
-  dplyr::mutate(
-    stim     = factor(stim, levels = STIM_LEVELS),
-    ref_line = factor(ref_line, levels = LINE_LEVELS)
+scree_plot <- function(fit, n_pc = 10, title = NULL) {
+  n <- min(n_pc, length(fit$pct))
+  d <- tibble::tibble(
+    pc  = factor(paste0("PC", seq_len(n)), levels = paste0("PC", seq_len(n))),
+    pct = fit$pct[seq_len(n)],
+    cum = cumsum(fit$pct)[seq_len(n)]
   )
 
-lim <- range(c(inter_overview$x, inter_overview$y), finite = TRUE)
+  ggplot(d, aes(pc, pct)) +
+    geom_col(fill = "grey70", colour = "black", width = 0.7) +
+    geom_line(aes(y = cum, group = 1), colour = "#D62728", linewidth = 0.7) +
+    geom_point(aes(y = cum), colour = "#D62728", size = 2) +
+    geom_text(aes(label = sprintf("%.0f", pct)), vjust = -0.4, size = 3) +
+    labs(x = NULL, y = "% variance (bars)   |   cumulative (line)", title = title) +
+    theme_classic()
+}
 
-p_all <- ggplot(inter_overview, aes(x, y)) +
-  geom_hline(yintercept = 0, colour = "grey88") +
-  geom_vline(xintercept = 0, colour = "grey88") +
-  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey35") +
-  geom_point(aes(colour = direction), size = 0.9, alpha = 0.55) +
-  facet_grid(ref_line ~ stim) +
-  scale_colour_manual(values = dir_cols, name = NULL) +
-  coord_fixed(xlim = lim, ylim = lim) +
-  labs(
-    title = "C9 stimulus response vs control line response",
-    subtitle = "Off-diagonal genes drive the interaction contrasts",
-    x = "Control line: stimulus vs Mock (log2FC)",
-    y = "C9: stimulus vs Mock (log2FC)"
-  ) +
-  theme_bw() +
-  theme(panel.grid.minor = element_blank(),
-        strip.background = element_rect(fill = "grey92", colour = NA))
+for (e in EXPERIMENTS) {
 
-ggsave(file.path(outdir, "interaction_overview.png"), p_all,
-       width = 11, height = 8, dpi = 300)
+  fit <- pca_fit(logcpm[[e]])
 
-# ---- Heatmap: most variable genes ----
+  save_fig(pca_plot(fit, sample_meta[[e]], c(1, 2),
+                    sprintf("PCA - %s (top %d variable genes)", e, fit$n_used)),
+           paste0("pca_", e), width = 8, height = 6, subdir = dir_overview)
+
+  save_fig(pca_plot(fit, sample_meta[[e]], c(3, 4),
+                    sprintf("PCA PC3/PC4 - %s (top %d variable genes)", e, fit$n_used)),
+           paste0("pca_pc34_", e), width = 8, height = 6, subdir = dir_overview)
+
+  save_fig(scree_plot(fit, 10, paste0("Scree - ", e)),
+           paste0("pca_scree_", e), width = 7, height = 5, subdir = dir_overview)
+}
+
+# ---- Sample-sample correlation ----
+# Pearson over every filtered gene, per experiment, on the voom matrix the DE
+# used. Clustered, unlike figures/qc/qc_sample_clustering.png which is RNAseqQC
+# on the vst of all 40 samples pooled.
 for (e in EXPERIMENTS) {
 
   lc <- logcpm[[e]]
   sm <- sample_meta[[e]]
+  lc <- lc[matrixStats::rowSds(lc) > 0, , drop = FALSE]
 
-  sym_map <- tt[[e]][[1]] |>
-    dplyr::select(ensembl_id, SYMBOL) |>
-    dplyr::filter(!is.na(SYMBOL), SYMBOL != "") |>
-    dplyr::distinct(ensembl_id, .keep_all = TRUE)
+  cm <- stats::cor(lc, method = "pearson")
 
-  gene_vars <- apply(lc, 1, var, na.rm = TRUE)
-  top_ens <- names(sort(gene_vars, decreasing = TRUE))[seq_len(min(50, length(gene_vars)))]
+  if (!all(is.finite(cm))) {
+    message("Non-finite correlations for ", e, " - skipping sample correlation heatmap")
+    next
+  }
 
-  mat_subset <- lc[top_ens, , drop = FALSE]
-
-  # Label rows with SYMBOL, falling back to Ensembl ID
-  new_names <- sym_map$SYMBOL[match(sub("\\..*$", "", top_ens), sym_map$ensembl_id)]
-  new_names[is.na(new_names) | new_names == ""] <- top_ens[is.na(new_names) | new_names == ""]
-  rownames(mat_subset) <- make.unique(new_names)
-
-  # Z-score per gene
-  mat_scaled <- t(scale(t(mat_subset)))
-
-  annotation_col <- data.frame(
-    line = sm$line,
-    stim = sm$stim,
-    row.names = sm$sample
+  ann <- data.frame(line = sm$line, stim = sm$stim, row.names = sm$sample)
+  ann_colors <- list(
+    line = line_cols[levels(droplevels(sm$line))],
+    stim = setNames(grDevices::grey.colors(nlevels(droplevels(sm$stim)),
+                                           start = 0.2, end = 0.9),
+                    levels(droplevels(sm$stim)))
   )
 
-  desired_order <- sm |>
-    dplyr::arrange(condition, rep) |>
-    dplyr::pull(sample)
+  ph <- pheatmap::pheatmap(
+    cm, silent = TRUE,
+    clustering_distance_rows = stats::as.dist(1 - cm),
+    clustering_distance_cols = stats::as.dist(1 - cm),
+    annotation_col    = ann,
+    annotation_colors = ann_colors,
+    display_numbers   = FALSE,
+    main = sprintf("Sample correlation (Pearson, %d genes) - %s", nrow(lc), e)
+  )
 
-  mat_scaled     <- mat_scaled[, desired_order, drop = FALSE]
-  annotation_col <- annotation_col[desired_order, , drop = FALSE]
+  save_fig(ph, paste0("sample_cor_", e), width = 9, height = 8, subdir = dir_overview)
+}
+
+# ---- Heatmap: most variable genes ----
+for (e in EXPERIMENTS) {
+
+  lc  <- logcpm[[e]]
+  sm  <- sample_meta[[e]]
+  map <- symbol_map(tt[[e]])
+
+  v <- matrixStats::rowVars(lc)
+  names(v) <- rownames(lc)
+  v <- v[is.finite(v) & v > 0]
+  top_ens <- utils::head(names(sort(v, decreasing = TRUE)), min(50, length(v)))
+
+  mat <- lc[top_ens, , drop = FALSE]
+  rownames(mat) <- label_genes(top_ens, map)
+
+  mat_scaled <- zscore_rows(mat)
+
+  if (!heatmap_ready(mat_scaled)) {
+    message("Too few variable genes for ", e, " - skipping top-variable heatmap")
+    next
+  }
+
+  desired_order <- sm |> dplyr::arrange(condition, rep) |> dplyr::pull(sample)
+  mat_scaled    <- mat_scaled[, desired_order, drop = FALSE]
+
+  ann <- data.frame(line = sm$line, stim = sm$stim, row.names = sm$sample)
+  ann <- ann[desired_order, , drop = FALSE]
 
   ann_colors <- list(
     line = line_cols[levels(droplevels(sm$line))],
-    stim = setNames(
-      grDevices::grey.colors(nlevels(droplevels(sm$stim)), start = 0.2, end = 0.9),
-      levels(droplevels(sm$stim))
-    )
+    stim = setNames(grDevices::grey.colors(nlevels(droplevels(sm$stim)),
+                                           start = 0.2, end = 0.9),
+                    levels(droplevels(sm$stim)))
   )
 
-  pheatmap::pheatmap(
-    mat_scaled,
+  ph <- pheatmap::pheatmap(
+    mat_scaled, silent = TRUE,
     cluster_rows      = FALSE,
     cluster_cols      = FALSE,
-    annotation_col    = annotation_col,
+    annotation_col    = ann,
     annotation_colors = ann_colors,
     show_rownames     = TRUE,
     show_colnames     = FALSE,
-    main     = paste0("Top 50 variable genes - ", e),
-    filename = file.path(dir_fig, paste0("heatmap_top50_variable_", e, ".png")),
-    width    = 10,
-    height   = 9
+    main = paste0("Top ", nrow(mat_scaled), " variable genes - ", e)
   )
+
+  save_fig(ph, paste0("heatmap_top50_variable_", e),
+           width = 10, height = 9, subdir = dir_overview)
 }
 
 # ---- log2FC heatmap across contrasts ----
@@ -737,19 +260,18 @@ top_n_genes <- 250
 
 for (e in EXPERIMENTS) {
 
-  res_use <- tt[[e]]
+  cns     <- contrasts_present(e)
+  res_use <- tt[[e]][cns]
 
-  res_use_df <- purrr::imap(res_use, function(df, contrast_name) {
-    df |> dplyr::mutate(contrast = contrast_name)
+  sig_tbl <- purrr::map_dfr(res_use, function(df) {
+    df[is_de(df$logFC, df$adj.P.Val), c("ensembl_id", "logFC")]
   })
 
-  sig_tbl <- dplyr::bind_rows(res_use_df) |>
-    dplyr::filter(!is.na(adj.P.Val), !is.na(logFC)) |>
-    dplyr::filter(adj.P.Val < P_CUT, abs(logFC) >= LFC_CUT) |>
-    dplyr::select(ensembl_id, logFC, adj.P.Val, contrast)
-
   if (nrow(sig_tbl) == 0) {
-    message("No significant genes for ", e, " - skipping log2FC heatmap")
+    save_fig(empty_plot(paste0("Top DE genes, log2 fold change - ", e),
+                        note = sprintf("No gene passes adj.P.Val < %s and |logFC| > %s",
+                                       P_CUT, LFC_CUT)),
+             paste0("heatmap_log2FC_", e), width = 8, height = 5, subdir = dir_overview)
     next
   }
 
@@ -757,161 +279,403 @@ for (e in EXPERIMENTS) {
     dplyr::group_by(ensembl_id) |>
     dplyr::summarise(max_abs_lfc = max(abs(logFC)), .groups = "drop") |>
     dplyr::arrange(dplyr::desc(max_abs_lfc)) |>
-    dplyr::slice_head(n = top_n_genes) |>
+    dplyr::slice_head(n = top_n_genes) |>   # clamps to available rows
     dplyr::pull(ensembl_id)
 
   # Non-significant cells become NA and are drawn black
-  lfc_mat <- sapply(res_use_df, function(df) {
+  lfc_mat <- vapply(res_use, function(df) {
     idx <- match(top_genes, df$ensembl_id)
     lfc <- df$logFC[idx]
-    p   <- df$adj.P.Val[idx]
-
-    is_sig <- !is.na(p) & !is.na(lfc) & (p < P_CUT) & (abs(lfc) >= LFC_CUT)
-    lfc[!is_sig] <- NA_real_
+    lfc[!is_de(lfc, df$adj.P.Val[idx])] <- NA_real_
     lfc
-  })
-  colnames(lfc_mat) <- names(res_use_df)
+  }, numeric(length(top_genes)))
 
   reg_e <- contrast_registry |>
-    dplyr::filter(experiment == e) |>
+    dplyr::filter(name %in% cns) |>
     dplyr::arrange(type, line, ref_line, stim)
 
   lfc_mat <- lfc_mat[, reg_e$name, drop = FALSE]
-
-  annotation_col <- data.frame(type = reg_e$type, row.names = reg_e$label)
   colnames(lfc_mat) <- reg_e$label
+  rownames(lfc_mat) <- label_genes(top_genes, symbol_map(res_use))
 
-  sym_map <- res_use[[1]] |>
-    dplyr::select(ensembl_id, SYMBOL) |>
-    dplyr::distinct(ensembl_id, .keep_all = TRUE)
-
-  gene_labels <- sym_map$SYMBOL[match(top_genes, sym_map$ensembl_id)]
-  gene_labels[is.na(gene_labels) | gene_labels == ""] <- top_genes[is.na(gene_labels) | gene_labels == ""]
-  rownames(lfc_mat) <- make.unique(gene_labels)
+  ann <- data.frame(type = reg_e$type, row.names = reg_e$label)
 
   # NA -> 0 for the clustering distance only
   lfc_for_cluster <- lfc_mat
   lfc_for_cluster[is.na(lfc_for_cluster)] <- 0
-  row_hc <- stats::hclust(stats::dist(lfc_for_cluster))
 
-  pheatmap::pheatmap(
-    lfc_mat,
-    cluster_rows      = row_hc,
+  ph <- pheatmap::pheatmap(
+    lfc_mat, silent = TRUE,
+    cluster_rows      = if (heatmap_ready(lfc_for_cluster))
+                          stats::hclust(stats::dist(lfc_for_cluster)) else FALSE,
     cluster_cols      = FALSE,
-    annotation_col    = annotation_col,
+    annotation_col    = ann,
     annotation_colors = list(type = type_cols[levels(droplevels(reg_e$type))]),
     na_col            = "black",
     show_colnames     = TRUE,
     show_rownames     = FALSE,
     angle_col         = 45,
-    main     = paste0("Top ", nrow(lfc_mat), " DE genes, log2 fold change - ", e),
-    filename = file.path(dir_fig, paste0("heatmap_log2FC_", e, ".png")),
-    width    = 11,
-    height   = 10
+    main = paste0("Top ", nrow(lfc_mat), " DE genes, log2 fold change - ", e,
+                  "  (black = not significant)")
   )
+
+  save_fig(ph, paste0("heatmap_log2FC_", e),
+           width = max(8, 3 + nrow(reg_e) * 0.42), height = 10, subdir = dir_overview)
 }
 
-# ---- Bar graphs for a hallmark gene set ----
-# EDIT: pick a hallmark set from script 4's GSEA results
-hallmark_name <- "HALLMARK_INTERFERON_ALPHA_RESPONSE"
-symbols <- unique(hallmark_sets[[hallmark_name]])
+# ---- DE gene counts across contrasts ----
+# Recomputed from tt rather than read back from results/de_gene_counts.tsv,
+# which would coerce the registry factors to character.
+for (e in EXPERIMENTS) {
+
+  # Built over the full registry so a contrast missing from tt still gets a
+  # labelled slot. scale_x_discrete(drop = FALSE) does not work here: with
+  # facet_grid(scales = "free_x") every facet would list every contrast.
+  counts <- purrr::map_dfr(contrasts_for(e), function(cn) {
+    if (!cn %in% names(tt[[e]])) {
+      return(tibble::tibble(contrast = cn, up = NA_integer_, down = NA_integer_))
+    }
+    d <- de_direction(tt[[e]][[cn]]$logFC, tt[[e]][[cn]]$adj.P.Val)
+    tibble::tibble(contrast = cn, up = sum(d == "Up"), down = sum(d == "Down"))
+  }) |>
+    dplyr::left_join(dplyr::select(contrast_registry, name, label, type, min_n),
+                     by = c("contrast" = "name")) |>
+    dplyr::mutate(label = factor(label, levels = contrast_labels(e)))
+
+  plot_df <- counts |>
+    tidyr::pivot_longer(c(up, down), names_to = "direction", values_to = "n") |>
+    dplyr::mutate(
+      signed    = ifelse(direction == "up", n, -n),
+      direction = factor(ifelse(direction == "up", "Up", "Down"), levels = DE_LEVELS)
+    )
+
+  p <- ggplot(plot_df, aes(label, signed, fill = direction)) +
+    geom_col(colour = "black", width = 0.72, linewidth = 0.25) +
+    geom_hline(yintercept = 0, linewidth = 0.4) +
+    geom_text(aes(label = ifelse(is.na(n), "", ifelse(n == 0, "0", format(n, big.mark = ","))),
+                  vjust = ifelse(signed >= 0, -0.4, 1.3)),
+              size = 2.5, na.rm = TRUE) +
+    # Unreplicated contrasts flagged once, above the panel
+    geom_text(data = dplyr::distinct(counts, label, type, min_n),
+              aes(x = label, y = Inf, label = ifelse(min_n == 1, "n = 1", "")),
+              inherit.aes = FALSE, vjust = 1.4, size = 2.6, colour = "#B22222") +
+    facet_grid(~ type, scales = "free_x", space = "free_x") +
+    scale_fill_manual(values = DE_COLS, drop = FALSE, name = NULL) +
+    scale_y_continuous(labels = function(z) format(abs(z), big.mark = ",")) +
+    labs(x = NULL, y = "DE genes (up above, down below)",
+         title = paste0("Differentially expressed genes - ", e),
+         subtitle = sprintf("adj.P.Val < %s and |log2FC| > %s", P_CUT, LFC_CUT)) +
+    theme_bw() +
+    theme(panel.grid.major.x = element_blank(),
+          axis.text.x = element_text(angle = 45, hjust = 1, colour = "black"),
+          strip.background = element_rect(fill = "grey92", colour = NA))
+
+  save_fig(p, paste0("de_counts_", e),
+           width = max(7, 2.2 + nrow(counts) * 0.62), height = 6, subdir = dir_overview)
+}
+
+# =============================================================================
+# Per-contrast DE figures
+# =============================================================================
+
+# ---- Volcano ----
+volcano_plot <- function(df, title = NULL, subtitle = NULL, caption = NULL,
+                         label_n = 0) {
+
+  d <- dplyr::mutate(df,
+    neglog10_padj = -log10(adj.P.Val),
+    direction     = de_direction(logFC, adj.P.Val)
+  )
+
+  n_up   <- sum(d$direction == "Up",   na.rm = TRUE)
+  n_down <- sum(d$direction == "Down", na.rm = TRUE)
+
+  p <- ggplot(d, aes(logFC, neglog10_padj)) +
+    geom_point(aes(colour = direction), alpha = 0.6, size = 1) +
+    geom_vline(xintercept = c(-LFC_CUT, LFC_CUT), linetype = "dashed", colour = "grey40") +
+    geom_hline(yintercept = -log10(P_CUT), linetype = "dashed", colour = "grey40") +
+    # Inf placement keeps the counts on-panel when the y axis is near-degenerate
+    annotate("text", x = Inf, y = Inf, label = paste0("Up: ", n_up),
+             hjust = 1.1, vjust = 1.5, colour = DE_COLS[["Up"]], size = 3.2) +
+    annotate("text", x = -Inf, y = Inf, label = paste0("Down: ", n_down),
+             hjust = -0.1, vjust = 1.5, colour = DE_COLS[["Down"]], size = 3.2) +
+    scale_colour_manual(values = DE_COLS, drop = FALSE, name = NULL) +
+    labs(title = title, subtitle = subtitle, caption = caption,
+         x = "log2 fold change", y = "-log10 adjusted p-value") +
+    theme_classic() +
+    theme(plot.caption = element_text(colour = "#B22222", hjust = 0))
+
+  if (label_n > 0) {
+    lab <- d |>
+      dplyr::filter(direction != "NS", !is.na(SYMBOL), SYMBOL != "") |>
+      dplyr::slice_min(adj.P.Val, n = label_n, with_ties = FALSE)
+    if (nrow(lab) > 0) {
+      p <- p + ggrepel::geom_text_repel(
+        data = lab, aes(label = SYMBOL), size = 2.6, fontface = "italic",
+        max.overlaps = 20, min.segment.length = 0, segment.size = 0.3,
+        segment.colour = "grey60")
+    }
+  }
+  p
+}
 
 for (e in EXPERIMENTS) {
 
-  res_use <- tt[[e]]
-  lc <- logcpm[[e]]
-  sm <- sample_meta[[e]]
+  sub_v <- file.path("de", "volcano", e)
 
-  # Set members significant in at least one contrast of this experiment
-  sig_ens <- dplyr::bind_rows(res_use) |>
-    dplyr::filter(!is.na(SYMBOL), SYMBOL %in% symbols) |>
-    dplyr::filter(!is.na(adj.P.Val), !is.na(logFC)) |>
-    dplyr::filter(adj.P.Val < P_CUT, abs(logFC) >= LFC_CUT) |>
-    dplyr::pull(ensembl_id) |>
-    unique()
-
-  if (length(sig_ens) == 0) {
-    message("No significant ", hallmark_name, " genes for ", e, " - skipping bar graphs")
-    next
+  for (cn in contrasts_present(e)) {
+    r <- reg_of(cn)
+    save_fig(
+      volcano_plot(tt[[e]][[cn]], title = r$label, subtitle = cn,
+                   caption = if (isTRUE(r$min_n == 1)) "Unreplicated (n = 1) - exploratory" else NULL,
+                   label_n = 15),
+      paste0("volcano_", cn), width = 7, height = 6, subdir = sub_v)
   }
 
-  sym_map <- res_use[[1]] |>
-    dplyr::select(ensembl_id, SYMBOL) |>
-    dplyr::distinct(ensembl_id, .keep_all = TRUE)
+  # Comparative grid
+  d  <- long_tt(e)
+  fd <- facet_dims(nlevels(droplevels(d$label)))
 
-  keep_rows <- sub("\\..*$", "", rownames(lc)) %in% sig_ens
-  lc_sub <- lc[keep_rows, , drop = FALSE]
+  p <- ggplot(d, aes(logFC, -log10(adj.P.Val))) +
+    geom_point(aes(colour = direction), alpha = 0.5, size = 0.5) +
+    geom_vline(xintercept = c(-LFC_CUT, LFC_CUT), linetype = "dashed", colour = "grey55") +
+    geom_hline(yintercept = -log10(P_CUT), linetype = "dashed", colour = "grey55") +
+    facet_wrap(~ label, ncol = fd$ncol, drop = FALSE) +
+    scale_colour_manual(values = DE_COLS, drop = FALSE, name = NULL) +
+    labs(title = paste0("Volcano - ", e), x = "log2 fold change",
+         y = "-log10 adjusted p-value") +
+    theme_bw() +
+    theme(panel.grid.minor = element_blank(),
+          strip.background = element_rect(fill = "grey92", colour = NA),
+          strip.text = element_text(size = 7.5))
 
-  # Wide to long: one row per gene-sample
-  plot_df <- tibble::tibble(
-    ensembl_id = rep(sub("\\..*$", "", rownames(lc_sub)), times = ncol(lc_sub)),
-    sample     = rep(colnames(lc_sub), each = nrow(lc_sub)),
-    logcpm     = as.vector(lc_sub)
-  ) |>
-    dplyr::left_join(dplyr::select(sm, sample, line, stim, condition), by = "sample") |>
-    dplyr::left_join(sym_map, by = "ensembl_id") |>
-    dplyr::filter(!is.na(SYMBOL), SYMBOL %in% symbols)
-
-  summary_df <- plot_df |>
-    dplyr::group_by(SYMBOL, condition, line, stim) |>
-    dplyr::summarise(
-      n         = sum(!is.na(logcpm)),
-      mean_expr = mean(logcpm, na.rm = TRUE),
-      sd_expr   = stats::sd(logcpm, na.rm = TRUE),
-      sem_expr  = sd_expr / sqrt(n),
-      .groups   = "drop"
-    )
-
-  # Bar of group means with SEM, individual samples jittered over it
-  make_gene_plot <- function(gene_symbol) {
-    df_pts <- dplyr::filter(plot_df, SYMBOL == gene_symbol)
-    df_sum <- dplyr::filter(summary_df, SYMBOL == gene_symbol)
-
-    ggplot(df_sum, aes(x = condition, y = mean_expr, fill = condition)) +
-      geom_col(width = 0.75, colour = "black") +
-      geom_errorbar(aes(ymin = mean_expr - sem_expr, ymax = mean_expr + sem_expr),
-                    width = 0.25, na.rm = TRUE) +
-      geom_point(
-        data = df_pts,
-        mapping = aes(x = condition, y = logcpm),
-        position = position_jitter(width = 0.15, height = 0),
-        shape = 21, size = 2.5, colour = "black", fill = "white", stroke = 0.6
-      ) +
-      scale_fill_manual(values = cond_cols, guide = "none") +
-      labs(x = NULL, y = "log2 CPM", title = gene_symbol) +
-      theme_bw() +
-      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
-  }
-
-  sig_symbols <- summary_df |>
-    dplyr::filter(!is.na(SYMBOL), SYMBOL != "") |>
-    dplyr::distinct(SYMBOL) |>
-    dplyr::pull(SYMBOL)
-
-  outdir <- ensure_dir(dir_fig, "bargraphs", e, hallmark_name)
-
-  for (g in sig_symbols) {
-    ggsave(file.path(outdir, paste0(g, ".png")), make_gene_plot(g),
-           width = 7, height = 4, dpi = 300)
-  }
-
-  message(e, ": wrote ", length(sig_symbols), " bar graphs to ", outdir)
+  save_fig(p, paste0("volcano_grid_", e), width = fd$width, height = fd$height,
+           subdir = file.path("de", "volcano"))
 }
 
-# ---- Venn diagrams ----
-# One 3-set Venn per stimulus, comparing DE genes across the spinal lines
+# ---- MA plots ----
+ma_plot <- function(df, title = NULL, subtitle = NULL, caption = NULL) {
+  d <- dplyr::mutate(df, direction = de_direction(logFC, adj.P.Val))
+
+  ggplot(d, aes(AveExpr, logFC)) +
+    geom_point(aes(colour = direction), alpha = 0.6, size = 1) +
+    geom_hline(yintercept = 0, linewidth = 0.4) +
+    geom_hline(yintercept = c(-LFC_CUT, LFC_CUT), linetype = "dashed", colour = "grey40") +
+    scale_colour_manual(values = DE_COLS, drop = FALSE, name = NULL) +
+    labs(title = title, subtitle = subtitle, caption = caption,
+         x = "Average expression (log2 CPM)", y = "log2 fold change") +
+    theme_classic() +
+    theme(plot.caption = element_text(colour = "#B22222", hjust = 0))
+}
+
+for (e in EXPERIMENTS) {
+
+  sub_m <- file.path("de", "ma", e)
+
+  for (cn in contrasts_present(e)) {
+    r <- reg_of(cn)
+    save_fig(
+      ma_plot(tt[[e]][[cn]], title = r$label, subtitle = cn,
+              caption = if (isTRUE(r$min_n == 1)) "Unreplicated (n = 1) - exploratory" else NULL),
+      paste0("ma_", cn), width = 7, height = 6, subdir = sub_m)
+  }
+
+  d  <- long_tt(e)
+  fd <- facet_dims(nlevels(droplevels(d$label)))
+
+  p <- ggplot(d, aes(AveExpr, logFC)) +
+    geom_point(aes(colour = direction), alpha = 0.5, size = 0.5) +
+    geom_hline(yintercept = 0, linewidth = 0.35) +
+    geom_hline(yintercept = c(-LFC_CUT, LFC_CUT), linetype = "dashed", colour = "grey55") +
+    facet_wrap(~ label, ncol = fd$ncol, drop = FALSE) +
+    scale_colour_manual(values = DE_COLS, drop = FALSE, name = NULL) +
+    labs(title = paste0("MA - ", e), x = "Average expression (log2 CPM)",
+         y = "log2 fold change") +
+    theme_bw() +
+    theme(panel.grid.minor = element_blank(),
+          strip.background = element_rect(fill = "grey92", colour = NA),
+          strip.text = element_text(size = 7.5))
+
+  save_fig(p, paste0("ma_grid_", e), width = fd$width, height = fd$height,
+           subdir = file.path("de", "ma"))
+}
+
+# ---- p-value histograms ----
+# One facet per contrast, annotated with the observed/expected gene count at
+# P_CUT (ratio) and the estimated null fraction (pi0).
+for (e in EXPERIMENTS) {
+
+  d <- long_tt(e)
+
+  stats_df <- d |>
+    dplyr::group_by(label) |>
+    dplyr::summarise(
+      n_genes = sum(!is.na(P.Value)),
+      ratio   = sum(P.Value < P_CUT, na.rm = TRUE) / (P_CUT * n_genes),
+      pi0     = min(1, 2 * mean(P.Value > 0.5, na.rm = TRUE)),
+      .groups = "drop"
+    ) |>
+    dplyr::mutate(txt = sprintf("ratio %.2f   pi0 %.2f", ratio, pi0))
+
+  fd <- facet_dims(nlevels(droplevels(d$label)))
+
+  p <- ggplot(d, aes(P.Value)) +
+    geom_histogram(binwidth = 0.025, boundary = 0,
+                   fill = "grey70", colour = "black", linewidth = 0.15) +
+    # Null-uniform expectation per bin
+    geom_hline(data = stats_df, aes(yintercept = n_genes * 0.025),
+               linetype = "dashed", colour = "#D62728", linewidth = 0.4) +
+    geom_text(data = stats_df, aes(x = 0.98, y = Inf, label = txt),
+              inherit.aes = FALSE, hjust = 1, vjust = 1.6, size = 2.6, colour = "grey20") +
+    facet_wrap(~ label, ncol = fd$ncol, scales = "free_y", drop = FALSE) +
+    labs(title = paste0("Raw p-value distribution - ", e),
+         subtitle = paste0("dashed line = uniform null;  ",
+                           "ratio = observed / expected genes at p < ", P_CUT,
+                           ";  pi0 = estimated null fraction"),
+         x = "Raw p-value", y = "Genes") +
+    theme_bw() +
+    theme(panel.grid.minor = element_blank(),
+          strip.background = element_rect(fill = "grey92", colour = NA),
+          strip.text = element_text(size = 7.5))
+
+  save_fig(p, paste0("pvalue_hist_", e), width = fd$width, height = fd$height,
+           subdir = file.path("de", "diagnostics"))
+}
+
+# ---- Interaction scatter ----
+# Each interaction contrast as its two component responses: the reference line's
+# stimulus response on x, the test line's on y.
+inter_reg <- contrast_registry |>
+  dplyr::filter(type == "interaction")
+
+inter_data <- purrr::pmap_dfr(
+  list(inter_reg$name, as.character(inter_reg$experiment), as.character(inter_reg$line),
+       as.character(inter_reg$stim), as.character(inter_reg$ref_line),
+       inter_reg$label, inter_reg$min_n),
+  function(nm, ex, ln, st, ref, lab, mn) {
+
+    test_cn <- paste0(ln, "_", st, "_vs_Mock")
+    ctl_cn  <- paste0(ref, "_", st, "_vs_Mock")
+
+    # Component within-line contrasts are looked up by name; skip if either
+    # is absent from the registry.
+    if (!all(c(nm, test_cn, ctl_cn) %in% names(tt[[ex]]))) {
+      message("Interaction ", nm, ": missing component contrast - skipping")
+      return(tibble::tibble())
+    }
+
+    int  <- tt[[ex]][[nm]]
+    test <- tt[[ex]][[test_cn]]
+    ctl  <- tt[[ex]][[ctl_cn]]
+
+    tibble::tibble(
+      contrast   = nm,
+      experiment = ex,
+      label      = lab,
+      line       = ln,
+      stim       = st,
+      ref_line   = ref,
+      min_n      = mn,
+      ensembl_id = int$ensembl_id,
+      SYMBOL     = int$SYMBOL,
+      x          = ctl$logFC[match(int$ensembl_id, ctl$ensembl_id)],
+      y          = test$logFC[match(int$ensembl_id, test$ensembl_id)],
+      int_lfc    = int$logFC,
+      int_padj   = int$adj.P.Val
+    ) |>
+      dplyr::filter(!is.na(x), !is.na(y)) |>
+      dplyr::mutate(
+        sig       = is_de(int_lfc, int_padj),
+        direction = dplyr::case_when(
+          sig & int_lfc > 0 ~ paste0("Higher in ", ln),
+          sig & int_lfc < 0 ~ paste0("Lower in ", ln),
+          TRUE              ~ "NS"
+        )
+      )
+  }
+)
+
+if (nrow(inter_data) > 0) {
+
+  test_lines <- unique(inter_data$line)
+  dir_cols <- c(
+    setNames(rep("#D62728", length(test_lines)), paste0("Higher in ", test_lines)),
+    setNames(rep("#1F77B4", length(test_lines)), paste0("Lower in ",  test_lines)),
+    NS = "grey75"
+  )
+
+  sub_i <- "interaction"
+
+  for (nm in unique(inter_data$contrast)) {
+
+    df  <- dplyr::filter(inter_data, contrast == nm)
+    lim <- safe_range(c(df$x, df$y))
+    r   <- safe_cor(df$x, df$y)
+
+    lab_df <- df |>
+      dplyr::filter(sig, !is.na(SYMBOL), SYMBOL != "") |>
+      dplyr::slice_min(int_padj, n = 15, with_ties = FALSE)
+
+    sub_txt <- sprintf("%s   |   %d genes differ (adj.P.Val < %s, |log2FC| > %s)",
+                       if (is.na(r)) "r = NA" else sprintf("r = %.2f", r),
+                       sum(df$sig), P_CUT, LFC_CUT)
+
+    p <- ggplot(df, aes(x, y)) +
+      geom_hline(yintercept = 0, colour = "grey88") +
+      geom_vline(xintercept = 0, colour = "grey88") +
+      geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey35") +
+      geom_point(aes(colour = direction), size = 1.2, alpha = 0.6) +
+      ggrepel::geom_text_repel(
+        data = lab_df, aes(label = SYMBOL),
+        size = 2.8, max.overlaps = 20, min.segment.length = 0,
+        segment.colour = "grey60", segment.size = 0.3) +
+      scale_colour_manual(values = dir_cols, name = NULL, drop = FALSE) +
+      coord_fixed(xlim = lim, ylim = lim) +
+      labs(title = df$label[1], subtitle = sub_txt,
+           caption = if (df$min_n[1] == 1) "Unreplicated (n = 1) - exploratory" else NULL,
+           x = paste0(df$ref_line[1], ": ", df$stim[1], " vs Mock (log2FC)"),
+           y = paste0(df$line[1], ": ", df$stim[1], " vs Mock (log2FC)")) +
+      theme_bw() +
+      theme(panel.grid.minor = element_blank(),
+            plot.caption = element_text(colour = "#B22222", hjust = 0))
+
+    save_fig(p, paste0("interaction_", nm), width = 6.5, height = 6.5, subdir = sub_i)
+  }
+
+  # Overview grid: reference line x stimulus, no gene labels
+  ov <- inter_data |>
+    dplyr::mutate(stim     = factor(stim, levels = STIM_LEVELS),
+                  ref_line = factor(ref_line, levels = LINE_LEVELS))
+  lim <- safe_range(c(ov$x, ov$y))
+
+  p_all <- ggplot(ov, aes(x, y)) +
+    geom_hline(yintercept = 0, colour = "grey88") +
+    geom_vline(xintercept = 0, colour = "grey88") +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey35") +
+    geom_point(aes(colour = direction), size = 0.9, alpha = 0.55) +
+    facet_grid(ref_line ~ stim, drop = FALSE) +
+    scale_colour_manual(values = dir_cols, name = NULL, drop = FALSE) +
+    coord_fixed(xlim = lim, ylim = lim) +
+    labs(title = "Test line stimulus response vs control line response",
+         subtitle = "Off-diagonal genes drive the interaction contrasts",
+         x = "Control line: stimulus vs Mock (log2FC)",
+         y = "Test line: stimulus vs Mock (log2FC)") +
+    theme_bw() +
+    theme(panel.grid.minor = element_blank(),
+          strip.background = element_rect(fill = "grey92", colour = NA))
+
+  save_fig(p_all, "interaction_overview", width = 11, height = 8, subdir = sub_i)
+}
+
+# =============================================================================
+# DE overlap
+# =============================================================================
+sub_o <- file.path("de", "overlap")
+
+# ---- Venn: DE genes per stimulus across the spinal lines ----
 venn_lines <- c("C9", "Ctrl3", "Ctrl2")
 venn_stims <- c("IFNb", "IFNg", "WNV")
 
-sig_genes_for <- function(df) {
-  df |>
-    dplyr::filter(!is.na(adj.P.Val), !is.na(logFC)) |>
-    dplyr::filter(adj.P.Val < P_CUT, abs(logFC) >= LFC_CUT) |>
-    dplyr::pull(ensembl_id) |>
-    unique()
-}
-
-outdir <- ensure_dir(dir_fig, "venn")
 wb <- openxlsx::createWorkbook()
 
 for (st in venn_stims) {
@@ -920,14 +684,13 @@ for (st in venn_stims) {
   cnames <- cnames[cnames %in% names(tt$spinal)]
   if (length(cnames) < 2) next
 
-  sig_sets <- lapply(cnames, function(cn) sig_genes_for(tt$spinal[[cn]]))
+  sig_sets <- lapply(cnames, function(cn) de_genes(tt$spinal[[cn]]))
 
   p <- ggvenn::ggvenn(sig_sets, fill_color = unname(line_cols[names(sig_sets)]),
                       stroke_size = 0.5, set_name_size = 5, text_size = 4) +
     labs(title = paste0(st, " vs Mock: DE genes by line"))
 
-  ggsave(file.path(outdir, paste0("venn_", st, ".png")), p,
-         width = 7, height = 6, dpi = 300)
+  save_fig(p, paste0("venn_", st), width = 7, height = 6, subdir = sub_o)
 
   # Per-gene membership plus each line's stats
   all_genes <- sort(unique(unlist(sig_sets, use.names = FALSE)))
@@ -962,107 +725,134 @@ if (length(openxlsx::sheets(wb)) > 0) {
   openxlsx::saveWorkbook(wb, file.path(dir_res, "DE_genes_venn.xlsx"), overwrite = TRUE)
 }
 
-# ---- GSEA figures ----
-# One figure per experiment. Spinal and cort are fit separately in 3_DE_limma.R,
-# so their NES values are not on a shared scale and never share an axis.
-outdir <- ensure_dir(dir_fig, "gsea")
+# ---- UpSet: overlap across a whole contrast family ----
+# UpSet rather than Venn: ggvenn caps at four sets and the genotype family has
+# eight. Up and down are drawn separately.
+upset_family <- function(exp_name, contrast_type, direction, file_name) {
 
-sig_label <- paste0("padj < ", P_CUT)
+  cns <- contrast_registry$name[contrast_registry$type == contrast_type &
+                                contrast_registry$experiment == exp_name]
+  cns <- intersect(cns, names(tt[[exp_name]]))
+  if (length(cns) < 2) return(invisible(NULL))
 
-# Hallmark bubble: pathway x contrast, significant pathways only
-make_gsea_bubble <- function(exp_name) {
+  sets <- lapply(cns, function(cn) de_genes(tt[[exp_name]][[cn]], direction = direction))
+  names(sets) <- reg_of(cns)$label
 
-  df_plot <- gsea_hallmark |>
-    dplyr::filter(experiment == exp_name,
-                  !is.na(padj), padj <= P_CUT,
-                  !is.na(NES), !is.na(pathway))
+  # fromList() misbehaves on empty elements
+  sets <- sets[lengths(sets) > 0]
 
-  if (nrow(df_plot) == 0) {
-    message("No significant Hallmark pathways for ", exp_name)
-    return(NULL)
+  if (length(sets) < 2) {
+    save_fig(empty_plot(file_name,
+                        note = sprintf("Fewer than two contrasts have %s genes",
+                                       tolower(direction))),
+             file_name, width = 8, height = 5, subdir = sub_o)
+    return(invisible(NULL))
   }
 
-  df_plot$pathway <- sub("^HALLMARK_", "", df_plot$pathway)
-
-  df_plot$label   <- factor(df_plot$label, levels = label_levels(exp_name))
-  df_plot$pathway <- with(df_plot, reorder(pathway, NES, mean))
-  # Unreplicated groups drawn as triangles; factor keeps the legend identical
-  # across experiments even when one has no n = 1 contrasts
-  df_plot$replication <- factor(ifelse(df_plot$min_n == 1, "n = 1", "replicated"),
-                                levels = c("replicated", "n = 1"))
-
-  ggplot(df_plot, aes(x = label, y = pathway,
-                      size = -log10(padj), fill = NES, shape = replication)) +
-    geom_point(colour = "black") +
-    facet_grid(~ type, scales = "free_x", space = "free_x") +
-    scale_size(name = "-log10(padj)", range = c(3, 9)) +
-    scale_shape_manual(values = c("n = 1" = 24, "replicated" = 21), drop = FALSE) +
-    ylab("Gene Set") +
-    labs(title = paste0("Hallmark GSEA - ", exp_name)) +
-    scale_x_discrete(position = "top") +
-    theme_bw() +
-    theme(
-      panel.grid = element_blank(),
-      axis.text.y = element_text(colour = "black"),
-      axis.text.x = element_text(colour = "black", angle = 45, hjust = 0),
-      axis.title.x = element_blank(),
-      strip.background = element_rect(fill = "grey92", colour = NA)
-    ) +
-    scale_fill_distiller(palette = "Spectral")
+  save_fig(
+    function() {
+      UpSetR::upset(UpSetR::fromList(sets), nsets = length(sets),
+                    order.by = "freq", nintersects = 30,
+                    mainbar.y.label = sprintf("Shared %s genes", tolower(direction)),
+                    sets.x.label = "DE genes per contrast",
+                    text.scale = c(1.3, 1.1, 1.1, 1, 1.1, 1))
+    },
+    file_name, width = 12, height = 7, subdir = sub_o)
 }
 
-# ALS geneset NES, one bar per contrast
-make_als_bar <- function(exp_name) {
+upset_family("spinal", "genotype",    "Up",   "upset_genotype_up")
+upset_family("spinal", "genotype",    "Down", "upset_genotype_down")
+upset_family("spinal", "within_line", "Up",   "upset_within_line_up")
+upset_family("spinal", "within_line", "Down", "upset_within_line_down")
 
-  df_plot <- gsea_als |>
-    dplyr::filter(experiment == exp_name, !is.na(NES))
+# =============================================================================
+# Gene expression panels
+# =============================================================================
+# One faceted figure per panel per experiment.
+GENE_PANELS <- list(
+  ISG_core      = c("ISG15", "IFIT1", "IFIT3", "MX1", "OAS1", "RSAD2", "IFI6",
+                    "STAT1", "IRF7", "BST2", "USP18", "OASL"),
+  IFNg_response = c("GBP1", "GBP2", "CXCL9", "CXCL10", "CXCL11", "IDO1", "HLA-DRA",
+                    "TAP1", "PSMB9", "IRF1", "SOCS1", "STAT2"),
+  Inflammatory  = c("IL6", "IL1B", "TNF", "CCL2", "CCL5", "CXCL8", "NFKB1",
+                    "NFKBIA", "TLR3", "TLR4"),
+  ALS_C9        = c("C9orf72", "TARDBP", "SOD1", "FUS", "STMN2", "UNC13A", "NEFL",
+                    "NEFH", "MAPT", "GFAP", "AIF1", "TREM2"),
+  Neural        = c("MAP2", "TUBB3", "SYP", "RBFOX3", "GFAP", "S100B", "OLIG2",
+                    "MBP", "SOX2", "NES", "CHAT", "ISL1")
+)
 
-  if (nrow(df_plot) == 0) {
-    message("No ALS geneset result for ", exp_name)
-    return(NULL)
-  }
+# Bar of group means with SEM, individual samples jittered over it.
+gene_panel_plot <- function(d, title, subtitle = NULL, ncol = 4) {
 
-  df_plot <- df_plot |>
-    dplyr::mutate(
-      label       = factor(label, levels = label_levels(exp_name)),
-      significant = ifelse(p.adjust < P_CUT, sig_label, "ns")
-    )
+  if (nrow(d) == 0) return(empty_plot(title, subtitle, "No panel gene detected"))
 
-  ggplot(df_plot, aes(x = label, y = NES, fill = significant)) +
-    geom_col(colour = "black", width = 0.7) +
-    # Unreplicated contrasts flagged at the free end of the bar
-    geom_text(aes(label = ifelse(min_n == 1, "n = 1", ""),
-                  vjust = ifelse(NES >= 0, -0.4, 1.3)),
-              size = 2.6, colour = "#B22222") +
-    facet_grid(~ type, scales = "free_x", space = "free_x") +
-    geom_hline(yintercept = 0) +
-    scale_fill_manual(values = setNames(c("#D62728", "grey80"), c(sig_label, "ns"))) +
-    labs(x = NULL, y = "NES",
-         title = "WP: Amyotrophic lateral sclerosis",
-         subtitle = exp_name) +
+  s <- gene_expr_summary(d)
+
+  ggplot(s, aes(condition, mean_expr, fill = condition)) +
+    geom_col(width = 0.75, colour = "black", linewidth = 0.25) +
+    geom_errorbar(aes(ymin = mean_expr - sem_expr, ymax = mean_expr + sem_expr),
+                  width = 0.25, na.rm = TRUE) +
+    geom_point(data = d, aes(condition, logcpm),
+               position = position_jitter(width = 0.15, height = 0),
+               shape = 21, size = 1.8, colour = "black", fill = "white",
+               stroke = 0.4, inherit.aes = FALSE) +
+    facet_wrap(~ SYMBOL, scales = "free_y", ncol = ncol) +
+    scale_fill_manual(values = cond_cols, guide = "none") +
+    labs(x = NULL, y = "log2 CPM", title = title, subtitle = subtitle) +
     theme_bw() +
-    theme(
-      panel.grid.major.x = element_blank(),
-      axis.text.x = element_text(angle = 45, hjust = 1, colour = "black"),
-      strip.background = element_rect(fill = "grey92", colour = NA)
-    )
+    theme(panel.grid.major.x = element_blank(),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 7),
+          strip.background = element_rect(fill = "grey92", colour = NA))
 }
 
 for (e in EXPERIMENTS) {
 
-  # Width tracks contrast count: 23 for spinal, 2 for cort
-  n_x <- length(label_levels(e))
-  w   <- max(7, 2.2 + n_x * 0.9)
+  lc  <- logcpm[[e]]
+  sm  <- sample_meta[[e]]
+  map <- symbol_map(tt[[e]])
+  sub_p <- file.path("panels", e)
 
-  p_bubble <- make_gsea_bubble(e)
-  if (!is.null(p_bubble)) {
-    ggsave(file.path(outdir, paste0("hallmark_bubble_", e, ".png")),
-           p_bubble, width = w, height = 9, dpi = 300, limitsize = FALSE)
+  for (set_name in names(GENE_PANELS)) {
+
+    want <- GENE_PANELS[[set_name]]
+    d    <- gene_expr_long(lc, sm, map, want)
+    got  <- unique(d$SYMBOL)
+    lost <- setdiff(want, got)
+
+    if (length(lost) > 0) {
+      message(e, " / ", set_name, ": not detected - ", paste(lost, collapse = ", "))
+    }
+
+    fd <- facet_dims(max(1, length(got)), ncol = 4, w_per = 2.6, h_per = 2.4)
+
+    save_fig(
+      gene_panel_plot(d, paste0(set_name, " - ", e),
+                      sprintf("%d of %d genes detected", length(got), length(want)),
+                      ncol = fd$ncol),
+      paste0("panel_", set_name), width = fd$width, height = fd$height, subdir = sub_p)
   }
 
-  p_als <- make_als_bar(e)
-  if (!is.null(p_als)) {
-    ggsave(file.path(outdir, paste0("als_geneset_NES_", e, ".png")),
-           p_als, width = w, height = 5, dpi = 300, limitsize = FALSE)
-  }
+  # Data-driven panel: genes DE in the most contrasts, ties broken on max |logFC|
+  hits <- purrr::map_dfr(contrasts_present(e), function(cn) {
+    df <- tt[[e]][[cn]]
+    keep <- is_de(df$logFC, df$adj.P.Val)
+    tibble::tibble(SYMBOL = df$SYMBOL[keep], lfc = abs(df$logFC[keep]))
+  }) |>
+    dplyr::filter(!is.na(SYMBOL), SYMBOL != "") |>
+    dplyr::group_by(SYMBOL) |>
+    dplyr::summarise(n_contrasts = dplyr::n(), max_lfc = max(lfc), .groups = "drop") |>
+    dplyr::arrange(dplyr::desc(n_contrasts), dplyr::desc(max_lfc)) |>
+    dplyr::slice_head(n = 12)
+
+  d  <- gene_expr_long(lc, sm, map, hits$SYMBOL)
+  fd <- facet_dims(max(1, dplyr::n_distinct(d$SYMBOL)), ncol = 4, w_per = 2.6, h_per = 2.4)
+
+  save_fig(
+    gene_panel_plot(d, paste0("Most recurrent DE genes - ", e),
+                    "Ranked by number of contrasts, then max |log2FC|",
+                    ncol = fd$ncol),
+    "panel_top_recurrent", width = fd$width, height = fd$height, subdir = sub_p)
 }
+
+message("5_Graphs.R complete")

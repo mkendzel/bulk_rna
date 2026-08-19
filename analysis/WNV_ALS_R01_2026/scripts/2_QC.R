@@ -55,9 +55,9 @@ QC_PARAMS <- list(
 )
 
 # ---- DESeqDataSet ----
-# Counts rounded to match the limma fit. make_dds() is unused: its required
-# ah_record argument downloads an EnsDb at runtime. plot_biotypes() needs only
-# gene_name and gene_biotype in rowData.
+# Counts rounded to match the limma fit. Built directly rather than with
+# make_dds(), whose ah_record argument downloads an EnsDb at runtime;
+# plot_biotypes() needs only gene_name and gene_biotype in rowData.
 cnt <- round(as.matrix(counts[, sample_map$sample, drop = FALSE]))
 
 dds <- DESeq2::DESeqDataSetFromMatrix(
@@ -108,8 +108,7 @@ qc_summary <- tibble::tibble(
     by = "sample"
   )
 
-# Vendor alignment stats, joined on plasmid code. Pre-normalisation, so a small
-# library still shows.
+# Vendor alignment stats (pre-normalisation), joined on plasmid code
 if (file.exists(results_zip)) {
   vk <- vendor_key()
 
@@ -241,8 +240,8 @@ x_samples <- theme(
   panel.grid.major.x = element_blank()
 )
 
-# Per-sample bars, one facet per check. Threshold lines drawn only where they fall
-# inside the observed range; an out-of-range cutoff flattens the panel.
+# Per-sample bars, one facet per check. Threshold lines drawn only where they
+# fall inside the observed range.
 guides_df <- qc_status |>
   dplyr::group_by(metric) |>
   dplyr::summarise(lo = min(value, na.rm = TRUE), hi = max(value, na.rm = TRUE),

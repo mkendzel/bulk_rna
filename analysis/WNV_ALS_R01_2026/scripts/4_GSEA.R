@@ -1,5 +1,5 @@
 # GSEA on the limma contrasts from 3_DE_limma.R. Compute only - the Hallmark
-# bubble and ALS bar figures are drawn in 5_Graphs.R from the checkpoints below.
+# bubble and ALS bar figures are drawn in 6_GSEA_figures.R from the checkpoints below.
 # Run from the repo root.
 
 # ---- Libraries ----
@@ -61,7 +61,7 @@ gsea_tbl_all <- purrr::imap_dfr(gsea_results, function(gr, exp_name) {
 write.table(gsea_tbl_all, file.path(dir_res, "gsea_hallmark_all.tsv"),
             sep = "\t", row.names = FALSE, quote = FALSE)
 
-# 5_Graphs.R draws the bubble plot from this; the RDS keeps `type` a factor
+# 6_GSEA_figures.R draws the bubble plot from this; the RDS keeps `type` a factor
 save_checkpoint(gsea_tbl_all, "gsea_hallmark", dir = dir_rds)
 
 # ---- Custom geneset GSEA (clusterProfiler) ----
@@ -168,5 +168,5 @@ write.table(
   quote = FALSE
 )
 
-# 5_Graphs.R draws the NES bar chart from this
+# 6_GSEA_figures.R draws the NES bar chart from this
 save_checkpoint(gsea_tbl_all_custom, "gsea_als", dir = dir_rds)

@@ -36,7 +36,7 @@ colnames(counts) <- sub("_count$", "", colnames(counts))
 # ---- Rename plasmid codes to real sample names ----
 # Vendor ships columns as FCMSVB_<idx>. Match on the vendor idx -> code map first,
 # then the exact plasmid code, then the trailing index. The vendor map is checked
-# against sample_map first, so a renumbered run errors instead of permuting labels.
+# against sample_map first, so a renumbered run errors instead of relabelling.
 vk <- vendor_key()
 
 rename_by_vendor <- character(0)
